@@ -65,6 +65,7 @@ main:
 	
 	jmp $
 	
+	; methods for work with A20
 	testA20methods proc near
 		mov ax, firsttest20strsize
 		push ax
@@ -110,11 +111,6 @@ main:
 		ret		
 	testA20methods endp
 	
-	ORG	1feh
-	db 55h, 0aah
-	
-	; code for real mode
-
 	testA20 proc near
 		push ds
 		
@@ -233,10 +229,10 @@ WK2:
 		ret
 	enableA20int15 endp
 	
+	ORG	1feh
+	db 55h, 0aah
 	
-	org 400h
 	;code for protected mode
-	
 	segmentdescriptor struct
 		seglimit1 dw 0
 		segbase1 dw 0
@@ -245,12 +241,12 @@ WK2:
 		segbase3 db 0
 	segmentdescriptor ends
 	
-	callgate struct
+	gatedescriptor struct
 		offset1 dw 0h
 		segselector dw 0h
 		params dw 0h
 		offset2 dw 0h
-	callgate ends
+	gatedescriptor ends
 	
 	; GDT
 	nulldesc segmentdescriptor {}
@@ -265,16 +261,12 @@ WK2:
 	; simply have function that multiply two numbers and return result in ax
 	coreconformcodedesc segmentdescriptor { conformcodesgsize, 0, 0, 109Eh, 0 } 
 	; call gates
-	printcallgate callgate { offset printMultiplyResultStr, 08h, 0EC01h, 0h } 
+	printcallgate gatedescriptor { offset printMultiplyResultStr, 08h, 0EC01h, 0h } 
+	; tss 
+	tssdesc segmentdescriptor { sizeof tssseg32, 7c00h + tsssegment, 0h, 1089h, 0h }
 	gdtsize = $ - nulldesc
 	
-	gatedescriptor struct
-		offset1 dw 0
-		segselector dw 0
-		params dw 0
-		offset2 dw 0
-	gatedescriptor ends
-	
+
 	; IDT
 	inthndls gatedescriptor 32 dup ({ 0h, 0h, 8700h, 0h }) ; 8600h - interrupt gate
 	idtsize = $ - inthndls
@@ -284,17 +276,14 @@ WK2:
 						offset int10hndl, offset int11hndl, offset int12hndl, offset int13hndl, offset int14hndl, 
 						offset int15hndl, offset int16hndl, offset int17hndl, offset int18hndl, offset int19hndl
 	
-	gdtrstruct struct
+	regstruct struct
 		limit dw 0h
 		baselinearaddr dd 0 
-	gdtrstruct ends
-	gdtr gdtrstruct { gdtsize - 1, 0 }
+	regstruct ends
+	gdtr regstruct { gdtsize - 1, 0 }
+	idtr regstruct { idtsize - 1, 0 }
 	
-	idtrstruct struct
-		limit dw 0h
-		baselinearaddr dd 0 
-	idtrstruct ends
-	idtr idtrstruct { idtsize - 1, 0 }
+	taskreg dw 50h ; 10 in GDT
 	
 	inthndlstr db 'Int handle called 0x00'
 	inthndlstrsize = $ - inthndlstr
@@ -305,8 +294,62 @@ WK2:
 	multiplyresultstr db 'Multiply result = 0x00'
 	multiplyresultstrsize = $ - multiplyresultstr
 	
-	mark dd 200000h
+	tssseg32 struct
+		prevtasklink dw 0h
+		reserved0 dw 0h
+		
+		esp0 dd 0h
+		ss0 dw 0h
+		reserved1 dw 0h
+		
+		esp1 dd 0h
+		ss1 dw 0h
+		reserved2 dw 0h
+		
+		esp2 dd 0h
+		ss2 dw 0h
+		reserved3 dw 0h
+		
+		cr3_pdbr dd 0h
+		eip_reg dd 0h
+		eflags dd 0h
+		eax_reg dd 0h
+		ecx_reg dd 0h
+		edx_reg dd 0h
+		ebx_reg dd 0h
+		esp_reg dd 0h
+		ebp_reg dd 0h
+		esi_reg dd 0h
+		edi_reg dd 0h
+		
+		es_reg dw 0h
+		reserved5 dw 0h
+		
+		cs_reg dw 0h
+		reserved6 dw 0h
+		
+		ss_reg dw 0h
+		reserved7 dw 0h
+		
+		ds_reg dw 0h
+		reserved8 dw 0h
+		
+		fs_reg dw 0h
+		reserved9 dw 0h
+		
+		gs_reg dw 0h
+		reserved10 dw 0h
+		
+		ldtselector dw 0h
+		reserved11 dw 0h
+		
+		reserved12 dw 0h ; 0 bit - flag T for debug
+		iomapbaseaddr dw 0h
+	tssseg32 ends
 	
+	tsssegment tssseg32 {}
+	
+	; main function for protected mode
 	workInProtectedMode proc near
 		mov ax, initpestrsize
 		push ax
@@ -316,6 +359,7 @@ WK2:
 		
 		call prepareGDTR
 		call prepareIDTR
+		call prepareTSS
 		
 		cli
 		
@@ -327,6 +371,8 @@ WK2:
 
 		lgdt gdtr
 		lidt idtr
+		ltr taskreg
+		
 		mov eax, cr0
 		or al, 1
 		mov cr0, eax
@@ -439,6 +485,13 @@ WK2:
 		
 		ret
 	prepareIDTR endp
+	
+	prepareTSS proc near
+		mov tsssegment.ss0, 10h ; 2 in GDT
+		mov tsssegment.esp0, 0FFFFh
+		
+		ret
+	prepareTSS endp
 	
 	; stack:
 	; no checks out of buff, out vga buff
