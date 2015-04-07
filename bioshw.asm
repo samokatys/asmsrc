@@ -295,6 +295,10 @@ WK2:
 	multiplyresultstr db 'Multiply result = 0x00'
 	multiplyresultstrsize = $ - multiplyresultstr
 	
+	int8counter dd 0h
+	int8outputstr db '0x00000000'
+	int8outputstrsize = $ - int8outputstr
+	
 	tssseg32 struct
 		prevtasklink dw 0h
 		reserved0 dw 0h
@@ -423,6 +427,13 @@ WK2:
 		; when we load task in register
 		; cpu load stored data in segment like cs:ip
 		nexttaskstep = $
+		
+		in al,70h
+		and al,07fh
+		out 70h,al
+		in al, 71h
+		
+		sti
 		
 		push 14h
 		push 18h
@@ -674,6 +685,51 @@ WK2:
 		retf 2
 	printMultiplyResultStr endp
 	
+	printInt8Counter proc near
+		push ds
+		mov bp, sp
+		mov ax, 10h
+		mov ds, ax
+	
+		mov eax, ds:int8counter
+		inc eax
+		mov ds:int8counter, eax
+		push eax ; tmp
+		
+		lea bx, ds:int8outputstr
+		add bx, 1h ; shift '0x'
+		mov cx, 8h
+		printintloop:
+			and ax, 0fh
+			xor ax, 30h
+			cmp ax, 39h
+			jbe end_conversion
+			add ax, 7h
+			end_conversion:
+
+			mov si, cx
+			mov [bx+si], al
+			
+			; shift number
+			mov eax, [bp-4]
+			shr eax, 4h
+			mov [bp-4], eax
+		loop printintloop
+		
+		pop eax ; tmp
+		
+		push 4fh - int8outputstrsize
+		push 8h
+		mov ax, int8outputstrsize
+		push ax
+		lea bp, int8outputstr
+		push bp
+		call printProtectedVGA
+		
+		pop ds
+		ret
+	printInt8Counter endp
+	
 	; interrupt handles
 	
 	intStubHndl proc far
@@ -737,8 +793,11 @@ WK2:
 	int7hndl endp
 	
 	int8hndl proc far
-		push 03h
-		call printIntStr
+		call printInt8Counter
+		
+		mov al, 20h
+		out 20h, al
+		
 		iret
 	int8hndl endp
 	
