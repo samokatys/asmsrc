@@ -263,7 +263,7 @@ WK2:
 	; call gates
 	printcallgate gatedescriptor { offset printMultiplyResultStr, 08h, 0EC01h, 0h } 
 	; tss 
-	tssdesc segmentdescriptor { sizeof tssseg32, 7c00h + tsssegment, 0h, 1089h, 0h }
+	tssdesc segmentdescriptor { sizeof tssseg16 - 1, 7c00h + tsssegment, 0h, 1089h, 0h }
 	gdtsize = $ - nulldesc
 	
 
@@ -347,7 +347,38 @@ WK2:
 		iomapbaseaddr dw 0h
 	tssseg32 ends
 	
-	tsssegment tssseg32 {}
+	tssseg16 struct
+		prevtasklink dw 0h
+		
+		sp0 dw 0h
+		ss0 dw 0h
+	
+		sp1 dw 0h
+		ss1 dw 0h
+		
+		sp2 dw 0h
+		ss2 dw 0h
+		
+		ip_reg dw 0h
+		eflags dw 0h
+		ax_reg dw 0h
+		cx_reg dw 0h
+		dx_reg dw 0h
+		bx_reg dw 0h
+		sp_reg dw 0h
+		bp_reg dw 0h
+		si_reg dw 0h
+		di_reg dw 0h
+		
+		es_reg dw 0h
+		cs_reg dw 0h
+		ss_reg dw 0h
+		ds_reg dw 0h
+		
+		taskldtselector dw 0h
+	tssseg16 ends
+	
+	tsssegment tssseg16 {}
 	
 	; main function for protected mode
 	workInProtectedMode proc near
@@ -359,7 +390,6 @@ WK2:
 		
 		call prepareGDTR
 		call prepareIDTR
-		call prepareTSS
 		
 		cli
 		
@@ -371,7 +401,6 @@ WK2:
 
 		lgdt gdtr
 		lidt idtr
-		ltr taskreg
 		
 		mov eax, cr0
 		or al, 1
@@ -387,6 +416,12 @@ WK2:
 		mov es, ax
 		mov ax, 18h
 		mov ss, ax	
+		
+		call prepareTSS
+		ltr taskreg
+		; when we load task in register
+		; cpu load stored data in segment like cs:ip
+		nexttaskstep = $
 		
 		push 14h
 		push 18h
@@ -487,8 +522,21 @@ WK2:
 	prepareIDTR endp
 	
 	prepareTSS proc near
-		mov tsssegment.ss0, 10h ; 2 in GDT
-		mov tsssegment.esp0, 0FFFFh
+		mov ds:tsssegment.cs_reg, cs
+		mov ds:tsssegment.ip_reg, nexttaskstep
+		
+		mov ds:tsssegment.ss_reg, ss
+		mov ds:tsssegment.sp_reg, sp
+		
+		mov ds:tsssegment.ds_reg, ds
+		mov ds:tsssegment.es_reg, es
+		
+		pushf
+		pop ax
+		mov ds:tsssegment.eflags, ax 
+		
+		mov ds:tsssegment.ss0, ss
+		mov ds:tsssegment.sp0, 0FFFFh
 		
 		ret
 	prepareTSS endp
