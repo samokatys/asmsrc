@@ -261,9 +261,10 @@ WK2:
 	; simply have function that multiply two numbers and return result in ax
 	coreconformcodedesc segmentdescriptor { conformcodesgsize, 0, 0, 109Eh, 0 } 
 	; call gates
-	printcallgate gatedescriptor { offset printMultiplyResultStr, 08h, 0EC01h, 0h } 
+	printcallgate gatedescriptor { offset printMultiplyResultStr, 08h, 0E401h, 0h } 
 	; tss 
-	tssdesc segmentdescriptor { sizeof tssseg16 - 1, 7c00h + tsssegment, 0h, 1089h, 0h }
+	tssdesc segmentdescriptor { sizeof tssseg16, 7c00h + tsssegment, 0h, 1081h, 0h }
+	; tssdesc segmentdescriptor { sizeof tssseg32 - 1, 7c00h + tsssegment, 0h, 1089h, 0h }
 	gdtsize = $ - nulldesc
 	
 
@@ -522,19 +523,31 @@ WK2:
 	prepareIDTR endp
 	
 	prepareTSS proc near
+		; mov ds:tsssegment.cs_reg, cs
+	    ; mov ds:tsssegment.eip_reg, nexttaskstep
 		mov ds:tsssegment.cs_reg, cs
 		mov ds:tsssegment.ip_reg, nexttaskstep
 		
+		; mov ds:tsssegment.ss_reg, ss
+		; mov ds:tsssegment.esp_reg, esp
 		mov ds:tsssegment.ss_reg, ss
 		mov ds:tsssegment.sp_reg, sp
 		
+		; mov ds:tsssegment.ds_reg, ds
+		; mov ds:tsssegment.es_reg, es
 		mov ds:tsssegment.ds_reg, ds
 		mov ds:tsssegment.es_reg, es
 		
+		xor eax, eax
+		; pushf
+		; pop ax
+		; mov ds:tsssegment.eflags, eax 
 		pushf
 		pop ax
 		mov ds:tsssegment.eflags, ax 
 		
+		; mov ds:tsssegment.ss0, ss
+		; mov ds:tsssegment.esp0, 0FFFFh
 		mov ds:tsssegment.ss0, ss
 		mov ds:tsssegment.sp0, 0FFFFh
 		
@@ -627,8 +640,8 @@ WK2:
 		mov ax, [bp+4]
 		push ax ; tmp
 		
-		lea bx, ds:mulresultstr
-		add bx, mulresultstrsize - 3h
+		lea bx, ds:multiplyresultstr
+		add bx, multiplyresultstrsize - 3h
 		mov cx, 2h
 		printintloop:
 			and ax, 0fh
@@ -651,9 +664,9 @@ WK2:
 		
 		push 18h
 		push 10h
-		mov ax, mulresultstrsize
+		mov ax, multiplyresultstrsize
 		push ax
-		lea bp, mulresultstr
+		lea bp, multiplyresultstr
 		push bp
 		call printProtectedVGA
 		
