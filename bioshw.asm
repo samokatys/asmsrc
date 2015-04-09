@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 0004h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 0005h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -270,12 +270,21 @@ WK2:
 
 	; IDT
 	inthndls gatedescriptor 32 dup ({ 0h, 0h, 8700h, 0h }) ; 8600h - interrupt gate
+	pichndls gatedescriptor 16 dup ({ 0h, 0h, 8600h, 0h }) 
 	idtsize = $ - inthndls
+	idtdesccount = idtsize / sizeof gatedescriptor
 	
 	inthndlfunctions dd offset int0hndl, offset int1hndl, offset int2hndl, offset int3hndl, offset int6hndl, 
 						offset int5hndl, offset int6hndl, offset int7hndl, offset int8hndl, offset int9hndl,
 						offset int10hndl, offset int11hndl, offset int12hndl, offset int13hndl, offset int14hndl, 
 						offset int15hndl, offset int16hndl, offset int17hndl, offset int18hndl, offset int19hndl
+	inthndlfunccount = ($ - inthndlfunctions) / 4
+						
+	pichndlfunctions dd offset int32hndl, offset int33hndl, offset int34hndl, offset int35hndl, 
+						offset int36hndl, offset int37hndl, offset int38hndl, offset int39hndl, 
+						offset int40hndl, offset int41hndl, offset int42hndl, offset int43hndl,
+						offset int44hndl, offset int45hndl, offset int46hndl, offset int47hndl
+	pichndlfunccount = ($ - pichndlfunctions) / 4
 	
 	regstruct struct
 		limit dw 0h
@@ -288,6 +297,9 @@ WK2:
 	
 	inthndlstr db 'Int handle called 0x00'
 	inthndlstrsize = $ - inthndlstr
+	
+	pichndlstr db 'pic 0x00'
+	pichndlstrsize = $ - pichndlstr
 	
 	intstubhndlstr db 'Int stub handle called'
 	intstubhndlstrsize = $ - intstubhndlstr
@@ -395,6 +407,7 @@ WK2:
 		
 		call prepareGDTR
 		call prepareIDTR
+		call reinitPIC
 		
 		cli
 		
@@ -507,16 +520,23 @@ WK2:
 		
 		xor eax, eax
 		xor bx, bx
-		mov cx, 20h
+		mov cx, idtsize / 4
+		mov di, 0h
 		mov si, 0h
 		prepareIDTRloop:
 			ifstart:
-				cmp cx, 0Bh ; cx >= 12 
-				ja notstub
+				cmp cx, (idtsize - sizeof inthndlfunctions) / 4
+				ja inthndl
+				cmp cx, sizeof pichndlfunctions
+				jb pichndl
 				; else
 					mov eax, offset intStubHndl
 					jmp ifend
-				notstub:
+				pichndl:
+					mov eax, pichndlfunctions[di]
+					add di, 4
+					jmp ifend
+				inthndl:
 					mov eax, inthndlfunctions[si]
 					add si, 4
 			ifend:
@@ -564,6 +584,34 @@ WK2:
 		
 		ret
 	prepareTSS endp
+	
+	; cli and sti must make outside this function
+	reinitPIC proc near
+		; icw1
+		mov al, 15h 
+		out 20h, al
+		out 0A0h, al
+		
+		; icw2
+		mov al, 20h ; shift to int 32
+		out 21h, al
+		mov al, 28h ; shift to int 40
+		out 0A1h, al
+		
+		; icw3
+		mov al, 04h ; irq2 - slave pic
+		out 21h, al
+		mov al, 02h ; id - 2 for slave pic
+		out 0A1h, al
+		
+		; icw4
+		mov al, 0Dh
+		out 21h, al
+		mov al, 09h
+		out 0A1h, al
+		
+		ret
+	reinitPIC endp
 	
 	; stack:
 	; no checks out of buff, out vga buff
@@ -641,6 +689,49 @@ WK2:
 		pop ds
 		ret 2
 	printIntStr endp
+	
+	printPicStr proc near
+		push ds
+		mov bp, sp
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, [bp+4]
+		push ax ; tmp
+		
+		lea bx, ds:pichndlstr
+		add bx, pichndlstrsize - 3h
+		mov cx, 2h
+		printintloop:
+			and ax, 0fh
+			xor ax, 30h
+			cmp ax, 39h
+			jbe end_conversion
+			add ax, 7h
+			end_conversion:
+
+			mov si, cx
+			mov [bx+si], al
+			
+			; shift number
+			mov ax, [bp-2]
+			shr ax, 4h
+			mov [bp-2], ax
+		loop printintloop
+		
+		pop ax ; clear tmp
+		
+		push 28h
+		push [bp+4]
+		mov ax, pichndlstrsize
+		push ax
+		lea bp, pichndlstr
+		push bp
+		call printProtectedVGA
+		
+		pop ds
+		ret 2
+	printPicStr endp
 	
 	printMultiplyResultStr proc far
 		push ds
@@ -793,11 +884,8 @@ WK2:
 	int7hndl endp
 	
 	int8hndl proc far
-		call printInt8Counter
-		
-		mov al, 20h
-		out 20h, al
-		
+		push 08h
+		call printIntStr
 		iret
 	int8hndl endp
 	
@@ -872,6 +960,134 @@ WK2:
 		call printIntStr
 		iret
 	int20hndl endp
+	
+	; pic handlers 
+	int32hndl proc far
+		push 0h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int32hndl endp
+	
+	int33hndl proc far
+		push 1h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int33hndl endp
+	
+	int34hndl proc far
+		push 2h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int34hndl endp
+	
+	int35hndl proc far
+		push 3h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int35hndl endp
+	
+	int36hndl proc far
+		push 4h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int36hndl endp
+	
+	int37hndl proc far
+		push 5h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int37hndl endp
+	
+	int38hndl proc far
+		push 6h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int38hndl endp
+	
+	int39hndl proc far
+		push 7h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int39hndl endp
+	
+	int40hndl proc far
+		call printInt8Counter
+		mov al, 20h
+		out 20h, al
+		iret
+	int40hndl endp
+	
+	int41hndl proc far
+		push 9h
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int41hndl endp
+	
+	int42hndl proc far
+		push 0Ah
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int42hndl endp
+	
+	int43hndl proc far
+		push 0Bh
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int43hndl endp
+	
+	int44hndl proc far
+		push 0Ch
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int44hndl endp
+	
+	int45hndl proc far
+		push 0Dh
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int45hndl endp
+	
+	int46hndl proc far
+		push 0Eh
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int46hndl endp
+	
+	int47hndl proc far
+		push 0Fh
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		iret
+	int47hndl endp
 	
 	codesgsize = $ - begincodesg
 codesg ENDS
