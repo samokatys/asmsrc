@@ -272,19 +272,19 @@ WK2:
 	inthndls gatedescriptor 32 dup ({ 0h, 0h, 8700h, 0h }) ; 8600h - interrupt gate
 	pichndls gatedescriptor 16 dup ({ 0h, 0h, 8600h, 0h }) 
 	idtsize = $ - inthndls
-	idtdesccount = idtsize / sizeof gatedescriptor
+	idtdescnum = idtsize / sizeof gatedescriptor
 	
 	inthndlfunctions dd offset int0hndl, offset int1hndl, offset int2hndl, offset int3hndl, offset int6hndl, 
 						offset int5hndl, offset int6hndl, offset int7hndl, offset int8hndl, offset int9hndl,
 						offset int10hndl, offset int11hndl, offset int12hndl, offset int13hndl, offset int14hndl, 
 						offset int15hndl, offset int16hndl, offset int17hndl, offset int18hndl, offset int19hndl
-	inthndlfunccount = ($ - inthndlfunctions) / 4
+	inthndlfuncnum = ($ - inthndlfunctions) / 4
 						
 	pichndlfunctions dd offset int32hndl, offset int33hndl, offset int34hndl, offset int35hndl, 
 						offset int36hndl, offset int37hndl, offset int38hndl, offset int39hndl, 
 						offset int40hndl, offset int41hndl, offset int42hndl, offset int43hndl,
 						offset int44hndl, offset int45hndl, offset int46hndl, offset int47hndl
-	pichndlfunccount = ($ - pichndlfunctions) / 4
+	pichndlfuncnum = ($ - pichndlfunctions) / 4
 	
 	regstruct struct
 		limit dw 0h
@@ -407,7 +407,6 @@ WK2:
 		
 		call prepareGDTR
 		call prepareIDTR
-		call reinitPIC
 		
 		cli
 		
@@ -416,6 +415,8 @@ WK2:
 		or al,80h
 		out 70h,al
 		in al, 71h
+		
+		call reinitPIC
 
 		lgdt gdtr
 		lidt idtr
@@ -520,15 +521,15 @@ WK2:
 		
 		xor eax, eax
 		xor bx, bx
-		mov cx, idtsize / 4
-		mov di, 0h
-		mov si, 0h
+		xor di, di
+		xor si, si
+		mov cx, idtdescnum
 		prepareIDTRloop:
 			ifstart:
-				cmp cx, (idtsize - sizeof inthndlfunctions) / 4
+				cmp cx, idtdescnum - inthndlfuncnum
 				ja inthndl
-				cmp cx, sizeof pichndlfunctions
-				jb pichndl
+				cmp cx, pichndlfuncnum
+				jbe pichndl
 				; else
 					mov eax, offset intStubHndl
 					jmp ifend
@@ -809,8 +810,8 @@ WK2:
 		
 		pop eax ; tmp
 		
-		push 4fh - int8outputstrsize
-		push 8h
+		push 28h
+		push 0h
 		mov ax, int8outputstrsize
 		push ax
 		lea bp, int8outputstr
@@ -963,8 +964,7 @@ WK2:
 	
 	; pic handlers 
 	int32hndl proc far
-		push 0h
-		call printPicStr
+		call printInt8Counter
 		mov al, 20h
 		out 20h, al
 		iret
@@ -1027,7 +1027,8 @@ WK2:
 	int39hndl endp
 	
 	int40hndl proc far
-		call printInt8Counter
+		push 8h
+		call printPicStr
 		mov al, 20h
 		out 20h, al
 		iret
