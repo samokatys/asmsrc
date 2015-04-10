@@ -1029,64 +1029,64 @@ WK2:
 	int40hndl proc far
 		push 8h
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int40hndl endp
 	
 	int41hndl proc far
 		push 9h
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int41hndl endp
 	
 	int42hndl proc far
 		push 0Ah
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int42hndl endp
 	
 	int43hndl proc far
 		push 0Bh
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int43hndl endp
 	
 	int44hndl proc far
 		push 0Ch
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int44hndl endp
 	
 	int45hndl proc far
 		push 0Dh
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int45hndl endp
 	
 	int46hndl proc far
 		push 0Eh
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int46hndl endp
 	
 	int47hndl proc far
 		push 0Fh
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		mov al, 0A0h
+		out 0A0h, al
 		iret
 	int47hndl endp
 	
