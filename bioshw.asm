@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 0005h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 0006h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -457,10 +457,11 @@ WK2:
 		push bp
 		call printProtectedVGA
 		
-		int 3h
 		
-		xor bx, bx
-		div bx
+		int 3h
+		; test int 0 handlers
+		;xor bx, bx
+		;div bx
 		
 		mov ax, 30h ; 6 in GDT
 		mov es, ax ; user mode data segment
@@ -836,257 +837,244 @@ WK2:
 		iret
 	intStubHndl endp
 	
-	int0hndl proc far
-		push 0h
+	LOAD_ALL_REGISTERS_IN_STACK macro
+		push ax
+		push bx
+		push cx
+		push dx
+		push ds
+		push es
+		push si
+		push di
+	endm
+	
+	UNLOAD_ALL_REGISTERS_IN_STACK macro
+		pop di
+		pop si
+		pop es
+		pop ds
+		pop dx
+		pop cx
+		pop bx
+		pop ax
+	endm
+	
+	STUB_INT_HNDL macro number
+		LOAD_ALL_REGISTERS_IN_STACK
+		push number
 		call printIntStr
+		UNLOAD_ALL_REGISTERS_IN_STACK
+	endm
+	
+	int0hndl proc far
+		STUB_INT_HNDL 0h
 		iret
 	int0hndl endp
 	
 	int1hndl proc far
-		push 1h
-		call printIntStr
+		STUB_INT_HNDL 1h
 		iret
 	int1hndl endp
 	
 	int2hndl proc far
-		push 2h
-		call printIntStr
+		STUB_INT_HNDL 2h
 		iret
 	int2hndl endp
 	
 	int3hndl proc far
-		push 03h
-		call printIntStr
+		STUB_INT_HNDL 03h
 		iret
 	int3hndl endp
 	
 	int4hndl proc far
-		push 04h
-		call printIntStr
+		STUB_INT_HNDL 04h
 		iret
 	int4hndl endp
 	
 	int5hndl proc far
-		push 05h
-		call printIntStr
+		STUB_INT_HNDL 05h
 		iret
 	int5hndl endp
 	
 	int6hndl proc far
-		push 06h
-		call printIntStr
+		STUB_INT_HNDL 06h
 		iret
 	int6hndl endp
 	
 	int7hndl proc far
-		push 07h
-		call printIntStr
+		STUB_INT_HNDL 07h
 		iret
 	int7hndl endp
 	
 	int8hndl proc far
-		push 08h
-		call printIntStr
+		STUB_INT_HNDL 08h
 		iret
 	int8hndl endp
 	
 	int9hndl proc far
-		push 09h
-		call printIntStr
+		STUB_INT_HNDL 09h
 		iret
 	int9hndl endp
 	
 	int10hndl proc far
-		push 0Ah
-		call printIntStr
+		STUB_INT_HNDL 0Ah
 		iret
 	int10hndl endp
 	
 	int11hndl proc far
-		push 0Bh
-		call printIntStr
+		STUB_INT_HNDL 0Bh
 		iret
 	int11hndl endp
 	
 	int12hndl proc far
-		push 0Ch
-		call printIntStr
+		STUB_INT_HNDL 0Ch
 		iret
 	int12hndl endp
 	
 	int13hndl proc far
-		push 0Dh
-		call printIntStr
+		STUB_INT_HNDL 0Dh
 		iret
 	int13hndl endp
 	
 	int14hndl proc far
-		push 0Eh
-		call printIntStr
+		STUB_INT_HNDL 0Eh
 		iret
 	int14hndl endp
 	
 	int15hndl proc far
-		push 0Fh
-		call printIntStr
+		STUB_INT_HNDL 0Fh
 		iret
 	int15hndl endp
 	
 	int16hndl proc far
-		push 10h
-		call printIntStr
+		STUB_INT_HNDL 10h
 		iret
 	int16hndl endp
 	
 	int17hndl proc far
-		push 11h
-		call printIntStr
+		STUB_INT_HNDL 11h
 		iret
 	int17hndl endp
 	
 	int18hndl proc far
-		push 12h
-		call printIntStr
+		STUB_INT_HNDL 12h
 		iret
 	int18hndl endp
 	
 	int19hndl proc far
-		push 13h
-		call printIntStr
+		STUB_INT_HNDL 13h
 		iret
 	int19hndl endp
 	
 	int20hndl proc far
-		push 14h
-		call printIntStr
+		STUB_INT_HNDL 14h
 		iret
 	int20hndl endp
 	
 	; pic handlers 
+	
+	; macro stub for master pic
+	STUB_MASTER_PIC_HNDL macro number
+		LOAD_ALL_REGISTERS_IN_STACK
+		push number
+		call printPicStr
+		mov al, 20h
+		out 20h, al
+		UNLOAD_ALL_REGISTERS_IN_STACK
+	endm
+	
 	int32hndl proc far
+		LOAD_ALL_REGISTERS_IN_STACK
 		call printInt8Counter
 		mov al, 20h
 		out 20h, al
+		UNLOAD_ALL_REGISTERS_IN_STACK
 		iret
 	int32hndl endp
 	
 	int33hndl proc far
-		push 1h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_MASTER_PIC_HNDL 1h
 		iret
 	int33hndl endp
 	
 	int34hndl proc far
-		push 2h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_MASTER_PIC_HNDL 2h
 		iret
 	int34hndl endp
 	
 	int35hndl proc far
-		push 3h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_MASTER_PIC_HNDL 3h
 		iret
 	int35hndl endp
 	
 	int36hndl proc far
-		push 4h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_MASTER_PIC_HNDL 4h
 		iret
 	int36hndl endp
 	
 	int37hndl proc far
-		push 5h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_MASTER_PIC_HNDL 5h
 		iret
 	int37hndl endp
 	
 	int38hndl proc far
-		push 6h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_MASTER_PIC_HNDL 6h
 		iret
 	int38hndl endp
 	
 	int39hndl proc far
-		push 7h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_MASTER_PIC_HNDL 7h
 		iret
 	int39hndl endp
 	
-	int40hndl proc far
-		push 8h
+	; macro stub for slave pic
+	STUB_SLAVE_PIC_HNDL macro number
+		LOAD_ALL_REGISTERS_IN_STACK
+		push number
 		call printPicStr
 		mov al, 20h
 		out 20h, al
+		out 0A0h, al
+		UNLOAD_ALL_REGISTERS_IN_STACK
+	endm
+	
+	int40hndl proc far
+		STUB_SLAVE_PIC_HNDL 8h
 		iret
 	int40hndl endp
 	
 	int41hndl proc far
-		push 9h
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_SLAVE_PIC_HNDL 9h
 		iret
 	int41hndl endp
 	
 	int42hndl proc far
-		push 0Ah
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_SLAVE_PIC_HNDL 0Ah
 		iret
 	int42hndl endp
 	
 	int43hndl proc far
-		push 0Bh
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_SLAVE_PIC_HNDL 0Bh
 		iret
 	int43hndl endp
 	
 	int44hndl proc far
-		push 0Ch
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_SLAVE_PIC_HNDL 0Ch
 		iret
 	int44hndl endp
 	
 	int45hndl proc far
-		push 0Dh
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_SLAVE_PIC_HNDL 0Dh
 		iret
 	int45hndl endp
 	
 	int46hndl proc far
-		push 0Eh
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_SLAVE_PIC_HNDL 0Eh
 		iret
 	int46hndl endp
 	
 	int47hndl proc far
-		push 0Fh
-		call printPicStr
-		mov al, 20h
-		out 20h, al
+		STUB_SLAVE_PIC_HNDL 0Fh
 		iret
 	int47hndl endp
 	
