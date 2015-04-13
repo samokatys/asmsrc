@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 0006h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 0007h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -396,6 +396,7 @@ WK2:
 	tssseg16 ends
 	
 	tsssegment tssseg16 {}
+	fonetsssegment tssseg32 {}
 	
 	; main function for protected mode
 	workInProtectedMode proc near
@@ -655,31 +656,16 @@ WK2:
 		mov ax, 10h
 		mov ds, ax
 		
+		xor eax, eax
 		mov ax, [bp+4]
-		push ax ; tmp
-		
 		lea bx, ds:inthndlstr
-		add bx, inthndlstrsize - 3h
-		mov cx, 2h
-		printintloop:
-			and ax, 0fh
-			xor ax, 30h
-			cmp ax, 39h
-			jbe end_conversion
-			add ax, 7h
-			end_conversion:
+		add bx, inthndlstrsize - 2h
+		
+		push eax
+		push bx
+		push 2h
+		call itoah
 
-			mov si, cx
-			mov [bx+si], al
-			
-			; shift number
-			mov ax, [bp-2]
-			shr ax, 4h
-			mov [bp-2], ax
-		loop printintloop
-		
-		pop ax ; clear tmp
-		
 		push 4fh - inthndlstrsize
 		push [bp+4]
 		mov ax, inthndlstrsize
@@ -697,31 +683,16 @@ WK2:
 		mov bp, sp
 		mov ax, 10h
 		mov ds, ax
-		
-		mov ax, [bp+4]
-		push ax ; tmp
-		
-		lea bx, ds:pichndlstr
-		add bx, pichndlstrsize - 3h
-		mov cx, 2h
-		printintloop:
-			and ax, 0fh
-			xor ax, 30h
-			cmp ax, 39h
-			jbe end_conversion
-			add ax, 7h
-			end_conversion:
 
-			mov si, cx
-			mov [bx+si], al
-			
-			; shift number
-			mov ax, [bp-2]
-			shr ax, 4h
-			mov [bp-2], ax
-		loop printintloop
+		xor eax, eax
+		mov ax, [bp+4]
+		lea bx, ds:pichndlstr
+		add bx, pichndlstrsize - 2h
 		
-		pop ax ; clear tmp
+		push eax
+		push bx
+		push 2h
+		call itoah
 		
 		push 28h
 		push [bp+4]
@@ -741,30 +712,15 @@ WK2:
 		mov ax, 10h
 		mov ds, ax
 		
+		xor eax, eax
 		mov ax, [bp+4]
-		push ax ; tmp
-		
 		lea bx, ds:multiplyresultstr
-		add bx, multiplyresultstrsize - 3h
-		mov cx, 2h
-		printintloop:
-			and ax, 0fh
-			xor ax, 30h
-			cmp ax, 39h
-			jbe end_conversion
-			add ax, 7h
-			end_conversion:
-
-			mov si, cx
-			mov [bx+si], al
-			
-			; shift number
-			mov ax, [bp-2]
-			shr ax, 4h
-			mov [bp-2], ax
-		loop printintloop
+		add bx, multiplyresultstrsize - 2h
 		
-		pop ax ; clear tmp
+		push eax
+		push bx
+		push 2h
+		call itoah		
 		
 		push 18h
 		push 10h
@@ -783,33 +739,17 @@ WK2:
 		mov bp, sp
 		mov ax, 10h
 		mov ds, ax
-	
+		
 		mov eax, ds:int8counter
 		inc eax
 		mov ds:int8counter, eax
-		push eax ; tmp
-		
 		lea bx, ds:int8outputstr
-		add bx, 1h ; shift '0x'
-		mov cx, 8h
-		printintloop:
-			and ax, 0fh
-			xor ax, 30h
-			cmp ax, 39h
-			jbe end_conversion
-			add ax, 7h
-			end_conversion:
-
-			mov si, cx
-			mov [bx+si], al
-			
-			; shift number
-			mov eax, [bp-4]
-			shr eax, 4h
-			mov [bp-4], eax
-		loop printintloop
+		add bx, 2h ; shift '0x'
 		
-		pop eax ; tmp
+		push eax
+		push bx
+		push 8h
+		call itoah
 		
 		push 28h
 		push 0h
@@ -822,6 +762,51 @@ WK2:
 		pop ds
 		ret
 	printInt8Counter endp
+	
+	; doubleword - value; pointer - buff; word - size
+	itoah proc near
+		push bp
+		mov bp, sp
+		push eax
+		push bx
+		push cx
+		push si
+		
+		mov cx, [bp+4] ; size
+		mov bx, [bp+6] ; buff
+		mov eax, [bp+8] ; value
+		mov si, cx
+		
+		push eax ; tmp
+		mov bp, sp
+		
+		itoahloop:
+			and ax, 0fh
+			xor ax, 30h
+			cmp ax, 39h
+			jbe end_conversion
+			add ax, 7h
+			end_conversion:
+
+			dec si
+			mov [bx+si], al
+			
+			; shift number
+			mov eax, [bp]
+			shr eax, 4h
+			mov [bp], eax
+		loop itoahloop
+		
+		pop eax ; tmp
+		
+		pop si
+		pop cx
+		pop bx
+		pop eax
+		pop bp
+		
+		ret 8
+	itoah endp
 	
 	; interrupt handles
 	
@@ -1138,6 +1123,12 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 	usermodecodesgsize = $ - beginusermodecodesg
 usermodecodesg ends
 	
+fonedatasg SEGMENT PARA USE32 'DATA'
 	
+fonedatasg ends
+
+fonecodesg SEGMENT PARA USE32 'CODE'
+	
+fonecodesg ends
 
 END
