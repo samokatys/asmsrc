@@ -264,7 +264,14 @@ WK2:
 	printcallgate gatedescriptor { offset printMultiplyResultStr, 08h, 0E401h, 0h } 
 	; tss 
 	tssdesc segmentdescriptor { sizeof tssseg16, 7c00h + tsssegment, 0h, 1081h, 0h }
-	; tssdesc segmentdescriptor { sizeof tssseg32 - 1, 7c00h + tsssegment, 0h, 1089h, 0h }
+	; print counter callgate
+	printcallgate gatedescriptor { offset printUserModeCounter, 08h, 0E403h, 0h } 
+	; fone segments
+	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 0 }
+	fonedatadesc segmentdescriptor { fonedatasgsize, 0, 0, 10F2h, 0 }
+	fonestackdesc segmentdescriptor { 0h, 0D000h, 1h, 10F6h, 0h }
+	; fone tss
+	fonetssdesc segmentdescriptor { sizeof tssseg32 - 1, 7c00h + fonetsssegment, 0h, 50E9h, 0h }
 	gdtsize = $ - nulldesc
 	
 
@@ -466,7 +473,7 @@ WK2:
 		
 		mov ax, 30h ; 6 in GDT
 		mov es, ax ; user mode data segment
-		mov es:callgatetocore, 4B0000h ; call gate
+		mov es:callgateprintmultiply, 4B0000h ; call gate
 		xor eax, eax
 		mov eax, offset multiplyTwoNumbers
 		xor ebx, ebx
@@ -588,7 +595,7 @@ WK2:
 		ret
 	prepareTSS endp
 	
-	; cli and sti must make outside this function
+	; cli and sti must call outside this function
 	reinitPIC proc near
 		; icw1
 		mov al, 15h 
@@ -731,6 +738,41 @@ WK2:
 		call printProtectedVGA
 		
 		pop ds
+		retf 2
+	printMultiplyResultStr endp
+	
+	; word task id, doubleword counter
+	printUserModeCounter proc far
+		push bp
+		mov bp, sp
+		push eax
+		push bx
+		push cx
+		
+		mov eax, [bp+6] ; counter
+		mov cx, [bp+10] ; id
+		lea bx, ds:int8outputstr
+		add bx, 2h ; shift '0x'
+		
+		push eax
+		push bx
+		push 8h
+		call itoah
+		
+		add cx, 13h
+		push 0h
+		push cx
+		mov ax, int8outputstrsize
+		push ax
+		lea bp, int8outputstr
+		push bp
+		call printProtectedVGA
+		
+		pop cx
+		pop bx
+		pop eax
+		pop bp
+		
 		retf 2
 	printMultiplyResultStr endp
 	
@@ -1090,11 +1132,13 @@ usermodedatasg SEGMENT PARA USE16 'DATA'
 	; user mode data segment
 	var1 dw 0Ah
 	var2 dw 0Bh
+	counter dw 0h
 	mulresultstr db '0xA * 0xB = 0x00'
 	mulresultstrsize = $ - mulresultstr
 	
 	conformsegfunc dd 0h
-	callgatetocore dd 0h
+	callgateprintmultiply dd 0h
+	callgateprintcounter dd 0h
 	
 	usermodedatasgsize = $ - beginusermodedatasg
 usermodedatasg ends
@@ -1114,7 +1158,7 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 		
 		; output result
 		push ax
-		lea ebx, ds:callgatetocore
+		lea ebx, ds:callgateprintmultiply
 		call far ptr [ebx]
 		
 		jmp $
@@ -1124,11 +1168,15 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 usermodecodesg ends
 	
 fonedatasg SEGMENT PARA USE32 'DATA'
+	beginfonedatasg = $
 	
+	fonedatasgsize = $ - beginfonedatasg
 fonedatasg ends
 
 fonecodesg SEGMENT PARA USE32 'CODE'
+	beginfonecodesg = $
 	
+	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
 
 END
