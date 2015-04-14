@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 0007h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 0008h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -265,16 +265,16 @@ WK2:
 	; tss 
 	tssdesc segmentdescriptor { sizeof tssseg16, 7c00h + tsssegment, 0h, 1081h, 0h }
 	; print counter callgate
-	printcallgate gatedescriptor { offset printUserModeCounter, 08h, 0E403h, 0h } 
+	printcountercallgate gatedescriptor { offset printUserModeCounter, 08h, 0E403h, 0h } 
 	; fone segments
 	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 0 }
 	fonedatadesc segmentdescriptor { fonedatasgsize, 0, 0, 10F2h, 0 }
-	fonestackdesc segmentdescriptor { 0h, 0D000h, 1h, 10F6h, 0h }
+	fonestackdesc segmentdescriptor { 0h, 0D000h, 2h, 10F6h, 0h }
+	fonestack0desc segmentdescriptor { 0h, 0D000h, 3h, 1096h, 0h }
 	; fone tss
 	fonetssdesc segmentdescriptor { sizeof tssseg32 - 1, 7c00h + fonetsssegment, 0h, 50E9h, 0h }
 	gdtsize = $ - nulldesc
 	
-
 	; IDT
 	inthndls gatedescriptor 32 dup ({ 0h, 0h, 8700h, 0h }) ; 8600h - interrupt gate
 	pichndls gatedescriptor 16 dup ({ 0h, 0h, 8600h, 0h }) 
@@ -301,6 +301,9 @@ WK2:
 	idtr regstruct { idtsize - 1, 0 }
 	
 	taskreg dw 50h ; 10 in GDT
+	
+	itoahcallptr dd 0h
+	mulcallptr dd 0h
 	
 	inthndlstr db 'Int handle called 0x00'
 	inthndlstrsize = $ - inthndlstr
@@ -413,6 +416,14 @@ WK2:
 		push bp
 		call print
 		
+		mov ebx, 430000h
+		mov eax, offset multiplyTwoNumbers
+		add eax, ebx
+		mov ds:mulcallptr, eax
+		mov eax, offset itoah
+		add eax, ebx
+		mov ds:itoahcallptr, eax
+		
 		call prepareGDTR
 		call prepareIDTR
 		
@@ -473,13 +484,18 @@ WK2:
 		
 		mov ax, 30h ; 6 in GDT
 		mov es, ax ; user mode data segment
-		mov es:callgateprintmultiply, 4B0000h ; call gate
-		xor eax, eax
-		mov eax, offset multiplyTwoNumbers
-		xor ebx, ebx
-		mov ebx, 430000h
-		add ebx, eax
-		mov es:conformsegfunc, ebx
+		mov es:callgateprintmultiply, 4B0000h
+		mov es:callgateprintcounter, 5B0000h 
+		mov eax, ds:itoahcallptr
+		mov es:itoahconformptr, eax
+		mov eax, ds:mulcallptr
+		mov es:mulconformptr, eax
+		
+		mov ax, 6Bh
+		mov es, ax
+		mov es:fonecallgateprintcounter, 5B0000h
+		mov eax, ds:itoahcallptr
+		mov es:foneitoahconformptr, eax
 		
 		push 3Bh ; stack
 		push 0FFFFh
@@ -515,6 +531,21 @@ WK2:
 		shl bx, 4
 		add bx, ax
 		mov coreconformcodedesc.segbase1, bx
+		
+		mov bx, seg conformcodesg
+		shl bx, 4
+		add bx, ax
+		mov coreconformcodedesc.segbase1, bx
+		
+		mov bx, seg fonecodesg
+		shl bx, 4
+		add bx, ax
+		mov fonecodedesc.segbase1, bx
+		
+		mov bx, seg fonedatasg
+		shl bx, 4
+		add bx, ax
+		mov fonedatadesc.segbase1, bx
 		
 		ret
 	prepareGDTR endp
@@ -564,33 +595,39 @@ WK2:
 	prepareIDTR endp
 	
 	prepareTSS proc near
-		; mov ds:tsssegment.cs_reg, cs
-	    ; mov ds:tsssegment.eip_reg, nexttaskstep
 		mov ds:tsssegment.cs_reg, cs
 		mov ds:tsssegment.ip_reg, nexttaskstep
 		
-		; mov ds:tsssegment.ss_reg, ss
-		; mov ds:tsssegment.esp_reg, esp
 		mov ds:tsssegment.ss_reg, ss
 		mov ds:tsssegment.sp_reg, sp
 		
-		; mov ds:tsssegment.ds_reg, ds
-		; mov ds:tsssegment.es_reg, es
 		mov ds:tsssegment.ds_reg, ds
 		mov ds:tsssegment.es_reg, es
 		
 		xor eax, eax
-		; pushf
-		; pop ax
-		; mov ds:tsssegment.eflags, eax 
 		pushf
 		pop ax
 		mov ds:tsssegment.eflags, ax 
-		
-		; mov ds:tsssegment.ss0, ss
-		; mov ds:tsssegment.esp0, 0FFFFh
+
 		mov ds:tsssegment.ss0, ss
 		mov ds:tsssegment.sp0, 0FFFFh
+		
+		mov ds:fonetsssegment.cs_reg, 63h ; 12 GDT
+	    mov ds:fonetsssegment.eip_reg, offset foneStart
+		
+		mov ds:fonetsssegment.ss_reg, 73h ; 14 GDT
+		mov ds:fonetsssegment.esp_reg, 0FFFFh
+		
+		mov ds:fonetsssegment.ds_reg, 6Bh ; 13 GDT
+		mov ds:fonetsssegment.es_reg, 6Bh ; 13 GDT
+		
+		xor eax, eax
+		pushf
+		pop ax
+		mov ds:fonetsssegment.eflags, eax
+		
+		mov ds:fonetsssegment.ss0, 7Bh ; 15 GDT
+		mov ds:fonetsssegment.esp0, 0FFFFh
 		
 		ret
 	prepareTSS endp
@@ -671,7 +708,8 @@ WK2:
 		push eax
 		push bx
 		push 2h
-		call itoah
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]
 
 		push 4fh - inthndlstrsize
 		push [bp+4]
@@ -699,7 +737,8 @@ WK2:
 		push eax
 		push bx
 		push 2h
-		call itoah
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]
 		
 		push 28h
 		push [bp+4]
@@ -727,7 +766,8 @@ WK2:
 		push eax
 		push bx
 		push 2h
-		call itoah		
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]	
 		
 		push 18h
 		push 10h
@@ -741,40 +781,32 @@ WK2:
 		retf 2
 	printMultiplyResultStr endp
 	
-	; word task id, doubleword counter
+	; word task id, ptr to string, size string
 	printUserModeCounter proc far
 		push bp
 		mov bp, sp
-		push eax
+		push ax
 		push bx
 		push cx
 		
-		mov eax, [bp+6] ; counter
-		mov cx, [bp+10] ; id
-		lea bx, ds:int8outputstr
-		add bx, 2h ; shift '0x'
+		mov ax, [bp+6] ; size
+		mov bx, [bp+8] ; string ptr
+		mov cx, [bp+10] ; task id
 		
-		push eax
-		push bx
-		push 8h
-		call itoah
-		
-		add cx, 13h
+		add cx, 0Ch
 		push 0h
 		push cx
-		mov ax, int8outputstrsize
 		push ax
-		lea bp, int8outputstr
-		push bp
+		push bx
 		call printProtectedVGA
 		
 		pop cx
 		pop bx
-		pop eax
+		pop ax
 		pop bp
 		
-		retf 2
-	printMultiplyResultStr endp
+		retf 6
+	printUserModeCounter endp
 	
 	printInt8Counter proc near
 		push ds
@@ -791,7 +823,8 @@ WK2:
 		push eax
 		push bx
 		push 8h
-		call itoah
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]
 		
 		push 28h
 		push 0h
@@ -804,51 +837,6 @@ WK2:
 		pop ds
 		ret
 	printInt8Counter endp
-	
-	; doubleword - value; pointer - buff; word - size
-	itoah proc near
-		push bp
-		mov bp, sp
-		push eax
-		push bx
-		push cx
-		push si
-		
-		mov cx, [bp+4] ; size
-		mov bx, [bp+6] ; buff
-		mov eax, [bp+8] ; value
-		mov si, cx
-		
-		push eax ; tmp
-		mov bp, sp
-		
-		itoahloop:
-			and ax, 0fh
-			xor ax, 30h
-			cmp ax, 39h
-			jbe end_conversion
-			add ax, 7h
-			end_conversion:
-
-			dec si
-			mov [bx+si], al
-			
-			; shift number
-			mov eax, [bp]
-			shr eax, 4h
-			mov [bp], eax
-		loop itoahloop
-		
-		pop eax ; tmp
-		
-		pop si
-		pop cx
-		pop bx
-		pop eax
-		pop bp
-		
-		ret 8
-	itoah endp
 	
 	; interrupt handles
 	
@@ -865,10 +853,10 @@ WK2:
 	intStubHndl endp
 	
 	LOAD_ALL_REGISTERS_IN_STACK macro
-		push ax
-		push bx
-		push cx
-		push dx
+		push eax
+		push ebx
+		push ecx
+		push edx
 		push ds
 		push es
 		push si
@@ -880,10 +868,10 @@ WK2:
 		pop si
 		pop es
 		pop ds
-		pop dx
-		pop cx
-		pop bx
-		pop ax
+		pop edx
+		pop ecx
+		pop ebx
+		pop eax
 	endm
 	
 	STUB_INT_HNDL macro number
@@ -1122,6 +1110,52 @@ conformcodesg SEGMENT PARA USE16 'CODE'
 		retf 4
 	multiplyTwoNumbers endp
 	
+	; work in current ds
+	; doubleword - value; pointer - buff; word - size
+	itoah proc far
+		push bp
+		mov bp, sp
+		push eax
+		push bx
+		push cx
+		push si
+		
+		mov cx, [bp+6] ; size
+		mov bx, [bp+8] ; buff
+		mov eax, [bp+10] ; value
+		mov si, cx
+		
+		push eax ; tmp
+		mov bp, sp
+		
+		itoahloop:
+			and ax, 0fh
+			xor ax, 30h
+			cmp ax, 39h
+			jbe end_conversion
+			add ax, 7h
+			end_conversion:
+
+			dec si
+			mov ds:[bx+si], al
+			
+			; shift number
+			mov eax, [bp]
+			shr eax, 4h
+			mov [bp], eax
+		loop itoahloop
+		
+		pop eax ; tmp
+		
+		pop si
+		pop cx
+		pop bx
+		pop eax
+		pop bp
+		
+		retf 8
+	itoah endp
+	
 	conformcodesgsize = $ - beginconformcodesg
 conformcodesg ends	
 
@@ -1132,11 +1166,13 @@ usermodedatasg SEGMENT PARA USE16 'DATA'
 	; user mode data segment
 	var1 dw 0Ah
 	var2 dw 0Bh
-	counter dw 0h
-	mulresultstr db '0xA * 0xB = 0x00'
-	mulresultstrsize = $ - mulresultstr
+	counter dd 0h
 	
-	conformsegfunc dd 0h
+	counterstr db 'I`m main task. My counter = 0x0000'
+	counterstrsize = $ - counterstr
+	
+	mulconformptr dd 0h
+	itoahconformptr dd 0h
 	callgateprintmultiply dd 0h
 	callgateprintcounter dd 0h
 	
@@ -1153,7 +1189,7 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 		; call multiply
 		push ds:var1
 		push ds:var2
-		lea ebx, ds:conformsegfunc
+		lea ebx, ds:mulconformptr
 		call far ptr [ebx]
 		
 		; output result
@@ -1161,8 +1197,43 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 		lea ebx, ds:callgateprintmultiply
 		call far ptr [ebx]
 		
-		jmp $
+		infinity_loop:
+			mov ecx, 01FFFFh
+			pause_loop:
+				dec ecx
+			jecxz pause_end
+			jmp pause_loop
+		pause_end:
+			
+			call printCounter
+		jmp infinity_loop
 	workInUserMode endp
+	
+	printCounter proc near
+		mov eax, ds:counter
+		inc eax
+		mov ds:counter, eax
+		
+		; itoa
+		lea bx, counterstr
+		add bx, counterstrsize - 4
+		
+		push eax
+		push bx
+		push 4h
+		lea ebx, ds:itoahconformptr
+		call far ptr [ebx]
+		
+		; word task id, ptr to string, size string
+		push 0h
+		lea bx, counterstr
+		push bx
+		push counterstrsize
+		lea ebx, ds:callgateprintcounter
+		call far ptr [ebx]
+		
+		ret
+	printCounter endp
 	
 	usermodecodesgsize = $ - beginusermodecodesg
 usermodecodesg ends
@@ -1170,11 +1241,33 @@ usermodecodesg ends
 fonedatasg SEGMENT PARA USE32 'DATA'
 	beginfonedatasg = $
 	
+	fonecounter dd 0h
+	
+	foneitoahconformptr dd 0h
+	fonecallgateprintcounter dd 0h
+	
 	fonedatasgsize = $ - beginfonedatasg
 fonedatasg ends
 
 fonecodesg SEGMENT PARA USE32 'CODE'
 	beginfonecodesg = $
+	
+	foneStart proc far
+	lea ebx, ds:fonecallgateprintcounter
+		infinity_loop:
+			mov ecx, 2000h
+			pause_loop:
+			loop pause_loop
+			
+			mov eax, ds:fonecounter
+			inc eax
+			mov ds:fonecounter, eax
+			
+			push 0h
+			push eax
+			call far ptr [ebx]
+		jmp infinity_loop
+	foneStart endp
 	
 	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
