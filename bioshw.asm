@@ -776,7 +776,6 @@ WK2:
 		pop ds
 		pop bp
 		
-		pop ds
 		ret 2
 	printPicStr endp
 	
@@ -1209,7 +1208,7 @@ usermodedatasg SEGMENT PARA USE16 'DATA'
 	; user mode data segment
 	var1 dw 0Ah
 	var2 dw 0Bh
-	counter dd 0h
+	counter dd 10000000h
 	
 	counterstr db 'I`m main task. My counter = 0x0000'
 	counterstrsize = $ - counterstr
@@ -1241,11 +1240,11 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 		call far ptr [ebx]
 		
 		infinity_loop:
-			;mov ecx, 0FFFFh
-			;pause_loop:
-			;	dec ecx
-			;jecxz pause_end
-			;jmp pause_loop
+			mov ecx, 02FFFFh
+			pause_loop:
+				dec ecx
+			jecxz pause_end
+			jmp pause_loop
 		pause_end:
 			
 			call printCounter
@@ -1286,6 +1285,9 @@ fonedatasg SEGMENT PARA USE32 'DATA'
 	
 	fonecounter dd 0h
 	
+	fonecounterstr db 'I`m fone task. My counter = 0x0000'
+	fonecounterstrsize = $ - fonecounterstr
+	
 	foneitoahconformptr dd 0h
 	fonecallgateprintcounter dd 0h
 	
@@ -1296,21 +1298,43 @@ fonecodesg SEGMENT PARA USE32 'CODE'
 	beginfonecodesg = $
 	
 	foneStart proc far
-	lea ebx, ds:fonecallgateprintcounter
 		infinity_loop:
-			mov ecx, 2000h
+			mov ecx, 02FFFFh
 			pause_loop:
-			loop pause_loop
+				dec ecx
+			jecxz pause_end
+			jmp pause_loop
+		pause_end:
 			
-			mov eax, ds:fonecounter
-			inc eax
-			mov ds:fonecounter, eax
-			
-			push 0h
-			push eax
-			call far ptr [ebx]
+			call fonePrintCounter
 		jmp infinity_loop
 	foneStart endp
+	
+	fonePrintCounter proc near
+		mov eax, ds:fonecounter
+		inc eax
+		mov ds:fonecounter, eax
+		
+		; itoa
+		lea bx, fonecounterstr
+		add bx, fonecounterstrsize - 4
+		
+		push eax
+		push bx
+		push 4h
+		lea ebx, ds:foneitoahconformptr
+		call far ptr [ebx]
+		
+		; word task id, ptr to string, size string
+		push 0h
+		lea bx, fonecounterstr
+		push bx
+		push fonecounterstrsize
+		lea ebx, ds:fonecallgateprintcounter
+		call far ptr [ebx]
+		
+		ret
+	fonePrintCounter endp
 	
 	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
