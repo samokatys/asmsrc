@@ -502,8 +502,6 @@ WK2:
 		push 2Bh ; user mode code 
 		push offset workInUserMode
 		retf
-		
-		ret
 	workInProtectedMode endp
 	
 	prepareGDTR proc
@@ -665,8 +663,14 @@ WK2:
 	; 0 <= col < 80 0 <= row < 25(bochsrc default)
 	; col, row, buff_size, buff_ptr, ret_addr
 	printProtectedVGA proc near
-		push es
+		push bp
 		mov bp, sp
+		push es
+		push ax
+		push bx
+		push cx
+		push dx
+		push si
 		
 		mov ax, [bp+8] ; row
 		mov bx, 50h
@@ -690,13 +694,24 @@ WK2:
 			mov es:[bx+si], ax
 		loop output
 		
+		pop si
+		pop dx
+		pop cx
+		pop bx
+		pop ax
 		pop es
+		pop bp
+		
 		ret 8
 	printProtectedVGA endp
 	
 	printIntStr proc near
-		push ds
+		push bp
 		mov bp, sp
+		push ds
+		push eax
+		push ebx
+		
 		mov ax, 10h
 		mov ds, ax
 		
@@ -719,13 +734,21 @@ WK2:
 		push bp
 		call printProtectedVGA
 		
+		pop ebx
+		pop eax
 		pop ds
+		pop bp
+		
 		ret 2
 	printIntStr endp
 	
 	printPicStr proc near
-		push ds
+		push bp
 		mov bp, sp
+		push ds
+		push eax
+		push ebx
+		
 		mov ax, 10h
 		mov ds, ax
 
@@ -748,13 +771,22 @@ WK2:
 		push bp
 		call printProtectedVGA
 		
+		pop ebx
+		pop eax
+		pop ds
+		pop bp
+		
 		pop ds
 		ret 2
 	printPicStr endp
 	
 	printMultiplyResultStr proc far
-		push ds
+		push bp
 		mov bp, sp
+		push ds
+		push eax
+		push ebx
+		
 		mov ax, 10h
 		mov ds, ax
 		
@@ -777,7 +809,11 @@ WK2:
 		push bp
 		call printProtectedVGA
 		
+		pop ebx
+		pop eax
 		pop ds
+		pop bp
+		
 		retf 2
 	printMultiplyResultStr endp
 	
@@ -809,8 +845,12 @@ WK2:
 	printUserModeCounter endp
 	
 	printInt8Counter proc near
-		push ds
+		push bp
 		mov bp, sp
+		push ds
+		push eax
+		push ebx
+		
 		mov ax, 10h
 		mov ds, ax
 		
@@ -834,13 +874,20 @@ WK2:
 		push bp
 		call printProtectedVGA
 		
+		pop ebx
+		pop eax
 		pop ds
+		pop bp
+		
 		ret
 	printInt8Counter endp
 	
 	; interrupt handles
 	
 	intStubHndl proc far
+		push bp
+		push ax
+		
 		push 4fh - intstubhndlstrsize
 		push 04h
 		mov ax, intstubhndlstrsize
@@ -849,36 +896,16 @@ WK2:
 		push bp
 		call printProtectedVGA
 		
+		pop ax
+		pop bp
+		
 		iret
 	intStubHndl endp
 	
-	LOAD_ALL_REGISTERS_IN_STACK macro
-		push eax
-		push ebx
-		push ecx
-		push edx
-		push ds
-		push es
-		push si
-		push di
-	endm
-	
-	UNLOAD_ALL_REGISTERS_IN_STACK macro
-		pop di
-		pop si
-		pop es
-		pop ds
-		pop edx
-		pop ecx
-		pop ebx
-		pop eax
-	endm
-	
+
 	STUB_INT_HNDL macro number
-		LOAD_ALL_REGISTERS_IN_STACK
 		push number
 		call printIntStr
-		UNLOAD_ALL_REGISTERS_IN_STACK
 	endm
 	
 	int0hndl proc far
@@ -990,20 +1017,24 @@ WK2:
 	
 	; macro stub for master pic
 	STUB_MASTER_PIC_HNDL macro number
-		LOAD_ALL_REGISTERS_IN_STACK
+		push ax
+		
 		push number
 		call printPicStr
 		mov al, 20h
 		out 20h, al
-		UNLOAD_ALL_REGISTERS_IN_STACK
+		
+		pop ax
 	endm
 	
 	int32hndl proc far
-		LOAD_ALL_REGISTERS_IN_STACK
+		push ax
+		
 		call printInt8Counter
 		mov al, 20h
 		out 20h, al
-		UNLOAD_ALL_REGISTERS_IN_STACK
+		
+		pop ax
 		iret
 	int32hndl endp
 	
@@ -1044,13 +1075,17 @@ WK2:
 	
 	; macro stub for slave pic
 	STUB_SLAVE_PIC_HNDL macro number
-		LOAD_ALL_REGISTERS_IN_STACK
+		;LOAD_ALL_REGISTERS_IN_STACK
+		push ax
+		
 		push number
 		call printPicStr
 		mov al, 20h
 		out 20h, al
 		out 0A0h, al
-		UNLOAD_ALL_REGISTERS_IN_STACK
+		
+		pop ax
+		;UNLOAD_ALL_REGISTERS_IN_STACK
 	endm
 	
 	int40hndl proc far
@@ -1102,10 +1137,18 @@ conformcodesg SEGMENT PARA USE16 'CODE'
 	beginconformcodesg = $
 	; conforming core code segment
 	multiplyTwoNumbers proc far
+		push bp
 		mov bp, sp
-		mov ax, [bp+4]
-		mov bx, [bp+6]
+		push ax
+		push bx
+		
+		mov ax, [bp+6]
+		mov bx, [bp+8]
 		mul bx
+		
+		pop bx
+		pop ax
+		pop bp
 		
 		retf 4
 	multiplyTwoNumbers endp
@@ -1198,11 +1241,11 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 		call far ptr [ebx]
 		
 		infinity_loop:
-			mov ecx, 01FFFFh
-			pause_loop:
-				dec ecx
-			jecxz pause_end
-			jmp pause_loop
+			;mov ecx, 0FFFFh
+			;pause_loop:
+			;	dec ecx
+			;jecxz pause_end
+			;jmp pause_loop
 		pause_end:
 			
 			call printCounter
