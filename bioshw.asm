@@ -267,12 +267,13 @@ WK2:
 	; print counter callgate
 	printcountercallgate gatedescriptor { offset printUserModeCounter, 08h, 0E403h, 0h } 
 	; fone segments
-	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 0 }
-	fonedatadesc segmentdescriptor { fonedatasgsize, 0, 0, 10F2h, 0 }
+	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 50FAh, 0 }
+	fonedatadesc segmentdescriptor { fonedatasgsize, 0, 0, 50F2h, 0 }
 	fonestackdesc segmentdescriptor { 0h, 0D000h, 2h, 10F6h, 0h }
 	fonestack0desc segmentdescriptor { 0h, 0D000h, 3h, 1096h, 0h }
 	; fone tss
 	fonetssdesc segmentdescriptor { sizeof tssseg32 - 1, 7c00h + fonetsssegment, 0h, 50E9h, 0h }
+	;fonetssdesc segmentdescriptor { sizeof tssseg16, 7c00h + fonetsssegment, 0h, 1081h, 0h }
 	gdtsize = $ - nulldesc
 	
 	; IDT
@@ -301,6 +302,7 @@ WK2:
 	idtr regstruct { idtsize - 1, 0 }
 	
 	taskreg dw 50h ; 10 in GDT
+	fonetaskreg dw 80h ; 16 in GDT
 	
 	itoahcallptr dd 0h
 	mulcallptr dd 0h
@@ -482,6 +484,8 @@ WK2:
 		;xor bx, bx
 		;div bx
 		
+		call prepareFoneTSS
+		
 		mov ax, 30h ; 6 in GDT
 		mov es, ax ; user mode data segment
 		mov es:callgateprintmultiply, 4B0000h
@@ -497,10 +501,17 @@ WK2:
 		mov eax, ds:itoahcallptr
 		mov es:foneitoahconformptr, eax
 		
-		push 3Bh ; stack
+		;lea ebx, ptrtofonetss ; fone gdt
+		;jmp far ptr [ebx]
+		
+		;push 3Bh ; stack
+		;push 0FFFFh
+		;push 2Bh ; user mode code 
+		;push offset workInUserMode
+		push 73h ; stack
 		push 0FFFFh
-		push 2Bh ; user mode code 
-		push offset workInUserMode
+		push 63h ; user mode code 
+		push 0h
 		retf
 	workInProtectedMode endp
 	
@@ -610,6 +621,10 @@ WK2:
 		mov ds:tsssegment.ss0, ss
 		mov ds:tsssegment.sp0, 0FFFFh
 		
+		ret
+	prepareTSS endp
+	
+	prepareFoneTSS proc near
 		mov ds:fonetsssegment.cs_reg, 63h ; 12 GDT
 	    mov ds:fonetsssegment.eip_reg, offset foneStart
 		
@@ -628,7 +643,7 @@ WK2:
 		mov ds:fonetsssegment.esp0, 0FFFFh
 		
 		ret
-	prepareTSS endp
+	prepareFoneTSS endp
 	
 	; cli and sti must call outside this function
 	reinitPIC proc near
@@ -1026,14 +1041,39 @@ WK2:
 		pop ax
 	endm
 	
+	ptrtomaintss dd 500000h
+	ptrtofonetss dd 800000h
+	
 	int32hndl proc far
 		push ax
+		push ebx
+		push ds
 		
 		call printInt8Counter
-		mov al, 20h
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		;str bx
+		;cmp bx, 50h
+		;je load_fone_tss
+		;	lea ebx, ptrtomaintss ; main gdt
+		;	jmp end_load
+		;load_fone_tss:
+ 		;	lea ebx, ptrtofonetss ; fone gdt
+		;end_load:
+		
+ 		mov al, 20h
 		out 20h, al
 		
+ 		;sti
+		
+ 		;jmp far ptr [ebx]
+
+		pop ds
+		pop ebx
 		pop ax
+		
 		iret
 	int32hndl endp
 	
@@ -1291,6 +1331,9 @@ fonedatasg SEGMENT PARA USE32 'DATA'
 	foneitoahconformptr dd 0h
 	fonecallgateprintcounter dd 0h
 	
+	testcall dd 0000h
+			dw 5Bh
+	
 	fonedatasgsize = $ - beginfonedatasg
 fonedatasg ends
 
@@ -1298,6 +1341,9 @@ fonecodesg SEGMENT PARA USE32 'CODE'
 	beginfonecodesg = $
 	
 	foneStart proc far
+		mov ax, 6Bh
+		mov ds, ax
+		
 		infinity_loop:
 			mov ecx, 02FFFFh
 			pause_loop:
@@ -1322,7 +1368,8 @@ fonecodesg SEGMENT PARA USE32 'CODE'
 		push eax
 		push bx
 		push 4h
-		lea ebx, ds:foneitoahconformptr
+		; lea ebx, ds:foneitoahconformptr
+		lea ebx, ds:testcall
 		call far ptr [ebx]
 		
 		; word task id, ptr to string, size string
