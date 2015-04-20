@@ -263,12 +263,13 @@ WK2:
 	; call gates
 	printcallgate gatedescriptor { offset printMultiplyResultStr, 08h, 0E401h, 0h } 
 	; tss 
-	tssdesc segmentdescriptor { sizeof tssseg16, 7c00h + tsssegment, 0h, 1081h, 0h }
+	;tssdesc segmentdescriptor { sizeof tssseg16, 7c00h + tsssegment, 0h, 1081h, 0h }
+	tssdesc segmentdescriptor { sizeof tssseg32 - 1, 7c00h + tsssegment, 0h, 50E9h, 0h }
 	; print counter callgate
 	printcountercallgate gatedescriptor { offset printUserModeCounter, 08h, 0E403h, 0h } 
 	; fone segments
-	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 50FAh, 0 }
-	fonedatadesc segmentdescriptor { fonedatasgsize, 0, 0, 50F2h, 0 }
+	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 0 }
+	fonedatadesc segmentdescriptor { fonedatasgsize, 0, 0, 10F2h, 0 }
 	fonestackdesc segmentdescriptor { 0h, 0D000h, 2h, 10F6h, 0h }
 	fonestack0desc segmentdescriptor { 0h, 0D000h, 3h, 1096h, 0h }
 	; fone tss
@@ -407,7 +408,7 @@ WK2:
 		taskldtselector dw 0h
 	tssseg16 ends
 	
-	tsssegment tssseg16 {}
+	tsssegment tssseg32 {}
 	fonetsssegment tssseg32 {}
 	
 	; main function for protected mode
@@ -497,21 +498,21 @@ WK2:
 		
 		mov ax, 6Bh
 		mov es, ax
-		mov es:fonecallgateprintcounter, 5B0000h
+		mov es:fonecallgateprintcounter, 5B0000h 
 		mov eax, ds:itoahcallptr
 		mov es:foneitoahconformptr, eax
 		
 		;lea ebx, ptrtofonetss ; fone gdt
 		;jmp far ptr [ebx]
 		
-		;push 3Bh ; stack
-		;push 0FFFFh
-		;push 2Bh ; user mode code 
-		;push offset workInUserMode
-		push 73h ; stack
+		push 3Bh ; stack
 		push 0FFFFh
-		push 63h ; user mode code 
-		push 0h
+		push 2Bh ; user mode code 
+		push offset workInUserMode
+		;push 73h ; stack
+		;push 0FFFFh
+		;push 63h ; user mode code 
+		;push 0h
 		retf
 	workInProtectedMode endp
 	
@@ -605,10 +606,10 @@ WK2:
 	
 	prepareTSS proc near
 		mov ds:tsssegment.cs_reg, cs
-		mov ds:tsssegment.ip_reg, nexttaskstep
+		mov ds:tsssegment.eip_reg, nexttaskstep
 		
 		mov ds:tsssegment.ss_reg, ss
-		mov ds:tsssegment.sp_reg, sp
+		mov ds:tsssegment.esp_reg, esp
 		
 		mov ds:tsssegment.ds_reg, ds
 		mov ds:tsssegment.es_reg, es
@@ -616,10 +617,10 @@ WK2:
 		xor eax, eax
 		pushf
 		pop ax
-		mov ds:tsssegment.eflags, ax 
+		mov ds:tsssegment.eflags, eax 
 
 		mov ds:tsssegment.ss0, ss
-		mov ds:tsssegment.sp0, 0FFFFh
+		mov ds:tsssegment.esp0, 0FFFFh
 		
 		ret
 	prepareTSS endp
@@ -639,7 +640,7 @@ WK2:
 		pop ax
 		mov ds:fonetsssegment.eflags, eax
 		
-		mov ds:fonetsssegment.ss0, 7Bh ; 15 GDT
+		mov ds:fonetsssegment.ss0, 78h ; 15 GDT
 		mov ds:fonetsssegment.esp0, 0FFFFh
 		
 		ret
@@ -1054,21 +1055,19 @@ WK2:
 		mov ax, 10h
 		mov ds, ax
 		
-		;str bx
-		;cmp bx, 50h
-		;je load_fone_tss
-		;	lea ebx, ptrtomaintss ; main gdt
-		;	jmp end_load
-		;load_fone_tss:
- 		;	lea ebx, ptrtofonetss ; fone gdt
-		;end_load:
+		str bx
+		cmp bx, 50h
+		je load_fone_tss
+			lea ebx, ptrtomaintss ; main gdt
+			jmp end_load
+		load_fone_tss:
+ 			lea ebx, ptrtofonetss ; fone gdt
+		end_load:
 		
  		mov al, 20h
 		out 20h, al
 		
- 		;sti
-		
- 		;jmp far ptr [ebx]
+ 		jmp far ptr [ebx]
 
 		pop ds
 		pop ebx
@@ -1248,7 +1247,7 @@ usermodedatasg SEGMENT PARA USE16 'DATA'
 	; user mode data segment
 	var1 dw 0Ah
 	var2 dw 0Bh
-	counter dd 10000000h
+	counter dd 1000h
 	
 	counterstr db 'I`m main task. My counter = 0x0000'
 	counterstrsize = $ - counterstr
@@ -1257,7 +1256,7 @@ usermodedatasg SEGMENT PARA USE16 'DATA'
 	itoahconformptr dd 0h
 	callgateprintmultiply dd 0h
 	callgateprintcounter dd 0h
-	
+
 	usermodedatasgsize = $ - beginusermodedatasg
 usermodedatasg ends
 	
@@ -1320,7 +1319,7 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 	usermodecodesgsize = $ - beginusermodecodesg
 usermodecodesg ends
 	
-fonedatasg SEGMENT PARA USE32 'DATA'
+fonedatasg SEGMENT PARA USE16 'DATA'
 	beginfonedatasg = $
 	
 	fonecounter dd 0h
@@ -1328,16 +1327,13 @@ fonedatasg SEGMENT PARA USE32 'DATA'
 	fonecounterstr db 'I`m fone task. My counter = 0x0000'
 	fonecounterstrsize = $ - fonecounterstr
 	
-	foneitoahconformptr dd 0h
 	fonecallgateprintcounter dd 0h
-	
-	testcall dd 0000h
-			dw 5Bh
+	foneitoahconformptr dd 0h
 	
 	fonedatasgsize = $ - beginfonedatasg
 fonedatasg ends
 
-fonecodesg SEGMENT PARA USE32 'CODE'
+fonecodesg SEGMENT PARA USE16 'CODE'
 	beginfonecodesg = $
 	
 	foneStart proc far
@@ -1368,12 +1364,11 @@ fonecodesg SEGMENT PARA USE32 'CODE'
 		push eax
 		push bx
 		push 4h
-		; lea ebx, ds:foneitoahconformptr
-		lea ebx, ds:testcall
+		lea ebx, ds:foneitoahconformptr
 		call far ptr [ebx]
 		
 		; word task id, ptr to string, size string
-		push 0h
+		push 1h
 		lea bx, fonecounterstr
 		push bx
 		push fonecounterstrsize
