@@ -1045,6 +1045,7 @@ WK2:
 	ptrtomaintss dd 500000h
 	ptrtofonetss dd 800000h
 	
+	; timer
 	int32hndl proc far
 		push ax
 		push ebx
@@ -1076,10 +1077,93 @@ WK2:
 		iret
 	int32hndl endp
 	
+	KBD_CMD_PORT = 64h
+	KBD_DATA_PORT = 60h
+	
+	; output console properties
+	SCREEN_COLS = 40
+	SCREEN_ROWS = 10
+	SCREEN_SYMBOLS_COLOR = 70h
+	
+	cursorcolpos dw 0h
+	cursorrowpos dw 0h
+	
+	kbdbuffhead db 0h
+	kbdbufftail db 0h
+	kbdbuff db 32 dup(0)
+	
+	; keyboard
 	int33hndl proc far
-		STUB_MASTER_PIC_HNDL 1h
+		push ax
+		push bx
+		push ds
+		
+		
+		in al, KBD_CMD_PORT
+		test al, 1h
+		jz output_empty
+			in al, KBD_DATA_PORT
+			mov bl, al
+			in al, KBD_DATA_PORT
+			add al, bl
+			mov ah, SCREEN_SYMBOLS_COLOR
+			push ax
+			call outputKeyboardSymbol
+		output_empty:
+		
+		mov al, 20h
+		out 20h, al
+		
+		pop ds
+		pop bx
+		pop ax		
 		iret
 	int33hndl endp
+	
+	outputKeyboardSymbol proc near
+		push bp
+		mov bp, sp
+		push ax
+		push bx
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, ds:cursorrowpos
+		mov bx, 80
+		mul bx
+		mov bx, ds:cursorcolpos
+		add bx, ax
+		shl bx, 1
+		
+		mov ax, 20h
+		mov es, ax
+		mov ax, [bp+4]
+		mov es:[bx], ax
+		
+		mov ax, ds:cursorcolpos
+		inc ax
+		cmp ax, SCREEN_COLS
+		jne no_add_row
+			mov ax, ds:cursorrowpos
+			inc ax
+			cmp ax, SCREEN_ROWS
+			jne no_clear_row
+				xor ax, ax
+			no_clear_row:
+			mov ds:cursorrowpos, ax 
+			xor ax, ax
+		no_add_row:
+		mov ds:cursorcolpos, ax
+		
+		pop es
+		pop ds
+		pop bx
+		pop ax
+		pop bp
+		ret 2
+	outputKeyboardSymbol endp
 	
 	int34hndl proc far
 		STUB_MASTER_PIC_HNDL 2h
