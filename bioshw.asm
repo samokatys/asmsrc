@@ -1119,8 +1119,8 @@ WK2:
 		push number
 		call printPicStr
 		mov al, 20h
-		out 20h, al
 		out 0A0h, al
+		out 20h, al
 		
 		pop ax
 		;UNLOAD_ALL_REGISTERS_IN_STACK
