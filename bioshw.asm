@@ -1083,7 +1083,6 @@ WK2:
 	kbdbuffhead dw 0h
 	kbdbufftail dw 0h
 	; real size is 32 because if tail == head -> buff is empty
-	; if overflow first symbol overwrite
 	kbdbuff db 33 dup(0)
 	kdbbuffsize = $ - kbdbuff
 	
@@ -1116,19 +1115,13 @@ WK2:
 				jne end_clear_tail
 					xor si, si
 				end_clear_tail:
-				mov ds:kbdbufftail, si
 				
-				; increase head if necessary
+				; if tail equal head don`t save tail
+				; buff is overflow
 				cmp si, ds:kbdbuffhead
-				jne end_inc_head
-					mov si, ds:kbdbuffhead
-					inc si
-					cmp si, kdbbuffsize
-					jne end_clear_head
-						xor si, si
-					end_clear_head:
-					mov ds:kbdbuffhead, si
-				end_inc_head:
+				je end_save_tail
+					mov ds:kbdbufftail, si
+				end_save_tail:
 				
 				
 				in al, KBD_CMD_PORT
