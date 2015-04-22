@@ -1080,6 +1080,73 @@ WK2:
 	KBD_CMD_PORT = 64h
 	KBD_DATA_PORT = 60h
 	
+	kbdbuffhead dw 0h
+	kbdbufftail dw 0h
+	; real size is 32 because if tail == head -> buff is empty
+	; if overflow first symbol overwrite
+	kbdbuff db 33 dup(0)
+	kdbbuffsize = $ - kbdbuff
+	
+	; keyboard
+	int33hndl proc far
+		push ax
+		push bx
+		push cx
+		push si
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		lea bx, ds:kbdbuff
+		mov si, ds:kbdbufftail
+		
+		in al, KBD_CMD_PORT
+		xor cx, cx
+		test al, 1h
+		jz output_empty
+			read_kbd_buff:
+				; write in buff
+				in al, KBD_DATA_PORT
+				mov ds:[bx+si], al
+				
+				; increase tail
+				inc si
+				cmp si, kdbbuffsize
+				jne end_clear_tail
+					xor si, si
+				end_clear_tail:
+				mov ds:kbdbufftail, si
+				
+				; increase head if necessary
+				cmp si, ds:kbdbuffhead
+				jne end_inc_head
+					mov si, ds:kbdbuffhead
+					inc si
+					cmp si, kdbbuffsize
+					jne end_clear_head
+						xor si, si
+					end_clear_head:
+					mov ds:kbdbuffhead, si
+				end_inc_head:
+				
+				
+				in al, KBD_CMD_PORT
+				test al, 1h
+			loopnz read_kbd_buff
+		output_empty:
+		
+		mov al, 20h
+		out 20h, al
+		
+		pop ds
+		pop si
+		pop cx
+		pop bx
+		pop ax		
+		iret
+	int33hndl endp
+	
 	; output console properties
 	SCREEN_COLS = 40
 	SCREEN_ROWS = 10
@@ -1088,39 +1155,7 @@ WK2:
 	cursorcolpos dw 0h
 	cursorrowpos dw 0h
 	
-	kbdbuffhead db 0h
-	kbdbufftail db 0h
-	kbdbuff db 32 dup(0)
-	
-	; keyboard
-	int33hndl proc far
-		push ax
-		push bx
-		push ds
-		
-		
-		in al, KBD_CMD_PORT
-		test al, 1h
-		jz output_empty
-			in al, KBD_DATA_PORT
-			mov bl, al
-			in al, KBD_DATA_PORT
-			add al, bl
-			mov ah, SCREEN_SYMBOLS_COLOR
-			push ax
-			call outputKeyboardSymbol
-		output_empty:
-		
-		mov al, 20h
-		out 20h, al
-		
-		pop ds
-		pop bx
-		pop ax		
-		iret
-	int33hndl endp
-	
-	outputKeyboardSymbol proc near
+	putchar proc near
 		push bp
 		mov bp, sp
 		push ax
@@ -1163,7 +1198,7 @@ WK2:
 		pop ax
 		pop bp
 		ret 2
-	outputKeyboardSymbol endp
+	putchar endp
 	
 	int34hndl proc far
 		STUB_MASTER_PIC_HNDL 2h
