@@ -275,6 +275,9 @@ WK2:
 	; fone tss
 	fonetssdesc segmentdescriptor { sizeof tssseg32 - 1, 7c00h + fonetsssegment, 0h, 50E9h, 0h }
 	;fonetssdesc segmentdescriptor { sizeof tssseg16, 7c00h + fonetsssegment, 0h, 1081h, 0h }
+	; callgates for keyboard
+	putcharcallgate gatedescriptor { offset putchar, 08h, 0E401h, 0h } 
+	getcharcallgate gatedescriptor { offset getchar, 08h, 0E400h, 0h } 
 	gdtsize = $ - nulldesc
 	
 	; IDT
@@ -499,6 +502,8 @@ WK2:
 		mov ax, 6Bh
 		mov es, ax
 		mov es:fonecallgateprintcounter, 5B0000h 
+		mov es:foneputcharcallgate, 8B0000h
+		mov es:fonegetcharcallgate, 930000h
 		mov eax, ds:itoahcallptr
 		mov es:foneitoahconformptr, eax
 		
@@ -897,6 +902,58 @@ WK2:
 		ret
 	printInt8Counter endp
 	
+	; output console properties
+	SCREEN_COLS = 40
+	SCREEN_ROWS = 10
+	
+	cursorcolpos dw 0h
+	cursorrowpos dw 0h
+	
+	putchar proc far
+		push bp
+		mov bp, sp
+		push ax
+		push bx
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, ds:cursorrowpos
+		mov bx, 80
+		mul bx
+		mov bx, ds:cursorcolpos
+		add bx, ax
+		shl bx, 1
+		
+		mov ax, 20h
+		mov es, ax
+		mov ax, [bp+6]
+		mov es:[bx], ax
+		
+		mov ax, ds:cursorcolpos
+		inc ax
+		cmp ax, SCREEN_COLS
+		jne no_add_row
+			mov ax, ds:cursorrowpos
+			inc ax
+			cmp ax, SCREEN_ROWS
+			jne no_clear_row
+				xor ax, ax
+			no_clear_row:
+			mov ds:cursorrowpos, ax 
+			xor ax, ax
+		no_add_row:
+		mov ds:cursorcolpos, ax
+		
+		pop es
+		pop ds
+		pop bx
+		pop ax
+		pop bp
+		retf 2
+	putchar endp
+	
 	; interrupt handles
 	
 	intStubHndl proc far
@@ -1140,58 +1197,37 @@ WK2:
 		iret
 	int33hndl endp
 	
-	; output console properties
-	SCREEN_COLS = 40
-	SCREEN_ROWS = 10
-	SCREEN_SYMBOLS_COLOR = 70h
-	
-	cursorcolpos dw 0h
-	cursorrowpos dw 0h
-	
-	putchar proc near
-		push bp
-		mov bp, sp
-		push ax
+	getchar proc far
 		push bx
-		push ds
+		push si
 		push es
 		
 		mov ax, 10h
-		mov ds, ax
-		mov ax, ds:cursorrowpos
-		mov bx, 80
-		mul bx
-		mov bx, ds:cursorcolpos
-		add bx, ax
-		shl bx, 1
-		
-		mov ax, 20h
 		mov es, ax
-		mov ax, [bp+4]
-		mov es:[bx], ax
 		
-		mov ax, ds:cursorcolpos
-		inc ax
-		cmp ax, SCREEN_COLS
-		jne no_add_row
-			mov ax, ds:cursorrowpos
-			inc ax
-			cmp ax, SCREEN_ROWS
-			jne no_clear_row
-				xor ax, ax
-			no_clear_row:
-			mov ds:cursorrowpos, ax 
+		mov si, es:kbdbuffhead
+		cmp si, es:kbdbufftail
+		je empty_buffer
+			lea bx, es:kbdbuff
 			xor ax, ax
-		no_add_row:
-		mov ds:cursorcolpos, ax
+			mov al, es:[bx+si]			
+			
+			inc si
+			cmp si, kdbbuffsize
+			jne end_clear_tail
+				xor si, si
+			end_clear_tail:
+			mov es:kbdbuffhead, si
+			jmp end_getchar
+		empty_buffer:
+			xor ax, ax
+		end_getchar:
 		
 		pop es
-		pop ds
+		pop si
 		pop bx
-		pop ax
-		pop bp
-		ret 2
-	putchar endp
+		retf 
+	getchar endp
 	
 	int34hndl proc far
 		STUB_MASTER_PIC_HNDL 2h
@@ -1442,6 +1478,9 @@ fonedatasg SEGMENT PARA USE16 'DATA'
 	fonecallgateprintcounter dd 0h
 	foneitoahconformptr dd 0h
 	
+	foneputcharcallgate dd 0h
+	fonegetcharcallgate dd 0h
+	
 	fonedatasgsize = $ - beginfonedatasg
 fonedatasg ends
 
@@ -1455,6 +1494,7 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		infinity_loop:
 			mov ecx, 02FFFFh
 			pause_loop:
+				call fonekeyboardoutput
 				dec ecx
 			jecxz pause_end
 			jmp pause_loop
@@ -1464,7 +1504,29 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		jmp infinity_loop
 	foneStart endp
 	
+	fonekeyboardoutput proc near
+		push ax
+		push ebx
+		lea ebx, ds:fonegetcharcallgate
+		call far ptr [ebx]
+		
+		cmp ax, 0h
+		je end_output
+			mov ah, 70h
+			push ax
+			lea bx, ds:foneputcharcallgate
+			call far ptr [ebx]
+		end_output:
+		
+		pop ebx
+		pop ax
+		ret
+	fonekeyboardoutput endp
+	
 	fonePrintCounter proc near
+		push eax
+		push ebx
+		
 		mov eax, ds:fonecounter
 		inc eax
 		mov ds:fonecounter, eax
@@ -1486,6 +1548,9 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		push fonecounterstrsize
 		lea ebx, ds:fonecallgateprintcounter
 		call far ptr [ebx]
+		
+		pop ebx
+		pop eax
 		
 		ret
 	fonePrintCounter endp
