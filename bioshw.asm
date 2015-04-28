@@ -1507,7 +1507,6 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 			jecxz pause_end
 			jmp pause_loop
 		pause_end:
-			
 			call fonePrintCounter
 		jmp infinity_loop
 	foneStart endp
@@ -1572,6 +1571,7 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		
 		lea bx, ds:scancodehandlers
 		
+		; all scan code multiply by 2 because address take 2 bytes
 		mov ds:[bx+3ch], offset scanCodeHndlA
 		mov ds:[bx+60h], offset scanCodeHndlB
 		mov ds:[bx+5ch], offset scanCodeHndlC
@@ -1622,6 +1622,9 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		mov ds:[bx+68h], offset scanCodeHndlPoint
 		mov ds:[bx+6ah], offset scanCodeHndlBackSlash
 		mov ds:[bx+72h], offset scanCodeHndlSpace
+		
+		mov ds:[bx+54h], offset scanCodeHndlShiftOn
+		mov ds:[bx+154h], offset scanCodeHndlShiftOff
 		                  
 		pop bx            
 	                      
@@ -1632,11 +1635,20 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		ret 2
 	scanCodeStub endp
 	
-	PRINT_CHAR macro char
+	printChar proc near
+		push bp
+		mov bp, sp
 		push ax
 		push bx
 		
-		mov ax, char
+		cmp ds:kbdRegister, KBD_REGISTER_SHIFT
+		je shift_char
+			mov ax, [bp+6]
+			jmp end_select_char
+		shift_char:
+			mov ax, [bp+4]	
+		end_select_char:
+
 		mov ah, 70h
 		push ax
 		lea bx, ds:foneputcharcallgate
@@ -1644,200 +1656,218 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		
 		pop bx
 		pop ax
+		pop bp
+		ret 4
+	printChar endp
+	
+	PRINT_CHAR macro char, charSh
+		push char
+		push charSh
+		call printChar
 		ret 2
 	endm
 	
 	scanCodeHndl0 proc near 
-		PRINT_CHAR '0'
+		PRINT_CHAR '0', ')'
 	scanCodeHndl0 endp
 	
 	scanCodeHndl1 proc near 
-		PRINT_CHAR '1'
+		PRINT_CHAR '1', '!'
 	scanCodeHndl1 endp
 	
 	scanCodeHndl2 proc near 
-		PRINT_CHAR '2'
+		PRINT_CHAR '2', '@'
 	scanCodeHndl2 endp
 	
 	scanCodeHndl3 proc near 
-		PRINT_CHAR '3'
+		PRINT_CHAR '3', '#'
 	scanCodeHndl3 endp
 	
 	scanCodeHndl4 proc near 
-		PRINT_CHAR '4'
+		PRINT_CHAR '4', '$'
 	scanCodeHndl4 endp
 	
 	scanCodeHndl5 proc near 
-		PRINT_CHAR '5'
+		PRINT_CHAR '5', '%'
 	scanCodeHndl5 endp
 	
 	scanCodeHndl6 proc near 
-		PRINT_CHAR '6'
+		PRINT_CHAR '6', '^'
 	scanCodeHndl6 endp
 	
 	scanCodeHndl7 proc near 
-		PRINT_CHAR '7'
+		PRINT_CHAR '7', '&'
 	scanCodeHndl7 endp
 	
 	scanCodeHndl8 proc near 
-		PRINT_CHAR '8'
+		PRINT_CHAR '8', '*'
 	scanCodeHndl8 endp
 	
 	scanCodeHndl9 proc near 
-		PRINT_CHAR '9'
+		PRINT_CHAR '9', '('
 	scanCodeHndl9 endp
 	
 	scanCodeHndlA proc near 
-		PRINT_CHAR 'a'
+		PRINT_CHAR 'a', 'A'
 	scanCodeHndlA endp
 	
 	scanCodeHndlB proc near 
-		PRINT_CHAR 'b'
+		PRINT_CHAR 'b', 'B'
 	scanCodeHndlB endp
 	
 	scanCodeHndlC proc near 
-		PRINT_CHAR 'c'
+		PRINT_CHAR 'c', 'C'
 	scanCodeHndlC endp
 	
 	scanCodeHndlD proc near 
-		PRINT_CHAR 'd'
+		PRINT_CHAR 'd', 'D'
 	scanCodeHndlD endp
 	
 	scanCodeHndlE proc near 
-		PRINT_CHAR 'e'
+		PRINT_CHAR 'e', 'E'
 	scanCodeHndlE endp
 	
 	scanCodeHndlF proc near 
-		PRINT_CHAR 'f'
+		PRINT_CHAR 'f', 'F'
 	scanCodeHndlF endp
 	
 	scanCodeHndlG proc near 
-		PRINT_CHAR 'g'
+		PRINT_CHAR 'g', 'G'
 	scanCodeHndlG endp
 	
 	scanCodeHndlH proc near 
-		PRINT_CHAR 'h'
+		PRINT_CHAR 'h', 'H'
 	scanCodeHndlH endp
 	
 	scanCodeHndlI proc near 
-		PRINT_CHAR 'i'
+		PRINT_CHAR 'i', 'I'
 	scanCodeHndlI endp
 	
 	scanCodeHndlJ proc near 
-		PRINT_CHAR 'j'
+		PRINT_CHAR 'j', 'J'
 	scanCodeHndlJ endp
 	
 	scanCodeHndlK proc near 
-		PRINT_CHAR 'k'
+		PRINT_CHAR 'k', 'K'
 	scanCodeHndlK endp
 	
 	scanCodeHndlL proc near 
-		PRINT_CHAR 'l'
+		PRINT_CHAR 'l', 'L'
 	scanCodeHndlL endp
 	
 	scanCodeHndlM proc near 
-		PRINT_CHAR 'm'
+		PRINT_CHAR 'm', 'M'
 	scanCodeHndlM endp
 	
 	scanCodeHndlN proc near 
-		PRINT_CHAR 'n'
+		PRINT_CHAR 'n', 'N'
 	scanCodeHndlN endp
 	
 	scanCodeHndlO proc near 
-		PRINT_CHAR 'o'
+		PRINT_CHAR 'o', 'O'
 	scanCodeHndlO endp
 	
 	scanCodeHndlP proc near 
-		PRINT_CHAR 'p'
+		PRINT_CHAR 'p', 'P'
 	scanCodeHndlP endp
 	
 	scanCodeHndlQ proc near 
-		PRINT_CHAR 'q'
+		PRINT_CHAR 'q', 'Q'
 	scanCodeHndlQ endp
 	
 	scanCodeHndlR proc near 
-		PRINT_CHAR 'r'
+		PRINT_CHAR 'r', 'R'
 	scanCodeHndlR endp
 	
 	scanCodeHndlS proc near 
-		PRINT_CHAR 's'
+		PRINT_CHAR 's', 'S'
 	scanCodeHndlS endp
 	
 	scanCodeHndlT proc near 
-		PRINT_CHAR 't'
+		PRINT_CHAR 't', 'T'
 	scanCodeHndlT endp
 	
 	scanCodeHndlU proc near 
-		PRINT_CHAR 'u'
+		PRINT_CHAR 'u', 'U'
 	scanCodeHndlU endp
 	
 	scanCodeHndlV proc near 
-		PRINT_CHAR 'v'
+		PRINT_CHAR 'v', 'V'
 	scanCodeHndlV endp
 	
 	scanCodeHndlW proc near 
-		PRINT_CHAR 'w'
+		PRINT_CHAR 'w', 'W'
 	scanCodeHndlW endp
 	
 	scanCodeHndlX proc near 
-		PRINT_CHAR 'x'
+		PRINT_CHAR 'x', 'X'
 	scanCodeHndlX endp
 	
 	scanCodeHndlY proc near 
-		PRINT_CHAR 'y'
+		PRINT_CHAR 'y', 'Y'
 	scanCodeHndlY endp
 	
 	scanCodeHndlZ proc near 
-		PRINT_CHAR 'z'
+		PRINT_CHAR 'z', 'Z'
 	scanCodeHndlZ endp
 	
 	scanCodeHndlApostrophe proc near 
-		PRINT_CHAR '`'
+		PRINT_CHAR '`', '~'
 	scanCodeHndlApostrophe endp
 	
 	scanCodeHndlMinus proc near 
-		PRINT_CHAR '-'
+		PRINT_CHAR '-', '_'
 	scanCodeHndlMinus endp
 	
 	scanCodeHndlEqual proc near 
-		PRINT_CHAR '='
+		PRINT_CHAR '=', '+'
 	scanCodeHndlEqual endp
 	
 	scanCodeHndlSlash proc near 
-		PRINT_CHAR '\\'
+		PRINT_CHAR '\\', '|'
 	scanCodeHndlSlash endp
 	
 	scanCodeHndlLBrace proc near 
-		PRINT_CHAR '['
+		PRINT_CHAR '[', '{'
 	scanCodeHndlLBrace endp
 	
 	scanCodeHndlRBrace proc near 
-		PRINT_CHAR ']'
+		PRINT_CHAR ']', '}'
 	scanCodeHndlRBrace endp
 	
 	scanCodeHndlSemicolon proc near 
-		PRINT_CHAR ';'
+		PRINT_CHAR ';', ':'
 	scanCodeHndlSemicolon endp
 	
 	scanCodeHndlQuote proc near 
-		PRINT_CHAR ''''
+		PRINT_CHAR '''', '"'
 	scanCodeHndlQuote endp
 	
 	scanCodeHndlComma proc near 
-		PRINT_CHAR ','
+		PRINT_CHAR ',', '<'
 	scanCodeHndlComma endp
 	
 	scanCodeHndlPoint proc near 
-		PRINT_CHAR '.'
+		PRINT_CHAR '.', '>'
 	scanCodeHndlPoint endp
 	
 	scanCodeHndlBackSlash proc near 
-		PRINT_CHAR '/'
+		PRINT_CHAR '/', '?'
 	scanCodeHndlBackSlash endp
 	
 	scanCodeHndlSpace proc near 
-		PRINT_CHAR ' '
+		PRINT_CHAR ' ', ' '
 	scanCodeHndlSpace endp
+	
+	scanCodeHndlShiftOn proc near 
+		mov ds:kbdRegister, KBD_REGISTER_SHIFT
+		ret 2
+	scanCodeHndlShiftOn endp
+	
+	scanCodeHndlShiftOff proc near 
+		mov ds:kbdRegister, KBD_REGISTER_NO_SHIFT
+		ret 2
+	scanCodeHndlShiftOff endp
 	
 	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
