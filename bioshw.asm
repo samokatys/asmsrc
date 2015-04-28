@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 0008h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 000ah, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -1481,6 +1481,10 @@ fonedatasg SEGMENT PARA USE16 'DATA'
 	foneputcharcallgate dd 0h
 	fonegetcharcallgate dd 0h
 	
+	kbdRegister db 0h
+	KBD_REGISTER_NO_SHIFT = 0h
+	KBD_REGISTER_SHIFT = 1h
+	
 	scancodehandlers dw 256 dup(offset scanCodeStub)
 	
 	fonedatasgsize = $ - beginfonedatasg
@@ -1605,6 +1609,19 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		mov ds:[bx+10h], offset scanCodeHndl7
 		mov ds:[bx+12h], offset scanCodeHndl8
 		mov ds:[bx+14h], offset scanCodeHndl9
+		
+		mov ds:[bx+52h], offset scanCodeHndlApostrophe
+		mov ds:[bx+18h], offset scanCodeHndlMinus
+		mov ds:[bx+1ah], offset scanCodeHndlEqual
+		mov ds:[bx+56h], offset scanCodeHndlSlash
+		mov ds:[bx+34h], offset scanCodeHndlLBrace
+		mov ds:[bx+36h], offset scanCodeHndlRBrace
+		mov ds:[bx+4eh], offset scanCodeHndlSemicolon
+		mov ds:[bx+50h], offset scanCodeHndlQuote
+		mov ds:[bx+66h], offset scanCodeHndlComma
+		mov ds:[bx+68h], offset scanCodeHndlPoint
+		mov ds:[bx+6ah], offset scanCodeHndlBackSlash
+		mov ds:[bx+72h], offset scanCodeHndlSpace
 		                  
 		pop bx            
 	                      
@@ -1773,6 +1790,54 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 	scanCodeHndlZ proc near 
 		PRINT_CHAR 'z'
 	scanCodeHndlZ endp
+	
+	scanCodeHndlApostrophe proc near 
+		PRINT_CHAR '`'
+	scanCodeHndlApostrophe endp
+	
+	scanCodeHndlMinus proc near 
+		PRINT_CHAR '-'
+	scanCodeHndlMinus endp
+	
+	scanCodeHndlEqual proc near 
+		PRINT_CHAR '='
+	scanCodeHndlEqual endp
+	
+	scanCodeHndlSlash proc near 
+		PRINT_CHAR '\\'
+	scanCodeHndlSlash endp
+	
+	scanCodeHndlLBrace proc near 
+		PRINT_CHAR '['
+	scanCodeHndlLBrace endp
+	
+	scanCodeHndlRBrace proc near 
+		PRINT_CHAR ']'
+	scanCodeHndlRBrace endp
+	
+	scanCodeHndlSemicolon proc near 
+		PRINT_CHAR ';'
+	scanCodeHndlSemicolon endp
+	
+	scanCodeHndlQuote proc near 
+		PRINT_CHAR ''''
+	scanCodeHndlQuote endp
+	
+	scanCodeHndlComma proc near 
+		PRINT_CHAR ','
+	scanCodeHndlComma endp
+	
+	scanCodeHndlPoint proc near 
+		PRINT_CHAR '.'
+	scanCodeHndlPoint endp
+	
+	scanCodeHndlBackSlash proc near 
+		PRINT_CHAR '/'
+	scanCodeHndlBackSlash endp
+	
+	scanCodeHndlSpace proc near 
+		PRINT_CHAR ' '
+	scanCodeHndlSpace endp
 	
 	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
