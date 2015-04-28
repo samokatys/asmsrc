@@ -1481,6 +1481,8 @@ fonedatasg SEGMENT PARA USE16 'DATA'
 	foneputcharcallgate dd 0h
 	fonegetcharcallgate dd 0h
 	
+	scancodehandlers dw 256 dup(offset scanCodeStub)
+	
 	fonedatasgsize = $ - beginfonedatasg
 fonedatasg ends
 
@@ -1491,10 +1493,12 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		mov ax, 6Bh
 		mov ds, ax
 		
+		call initKeyboardHandlers
+		
 		infinity_loop:
 			mov ecx, 02FFFFh
 			pause_loop:
-				call fonekeyboardoutput
+				call foneKeyboardOutput
 				dec ecx
 			jecxz pause_end
 			jmp pause_loop
@@ -1503,25 +1507,6 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 			call fonePrintCounter
 		jmp infinity_loop
 	foneStart endp
-	
-	fonekeyboardoutput proc near
-		push ax
-		push ebx
-		lea ebx, ds:fonegetcharcallgate
-		call far ptr [ebx]
-		
-		cmp ax, 0h
-		je end_output
-			mov ah, 70h
-			push ax
-			lea bx, ds:foneputcharcallgate
-			call far ptr [ebx]
-		end_output:
-		
-		pop ebx
-		pop ax
-		ret
-	fonekeyboardoutput endp
 	
 	fonePrintCounter proc near
 		push eax
@@ -1554,6 +1539,240 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		
 		ret
 	fonePrintCounter endp
+	
+	foneKeyboardOutput proc near
+		push ax
+		push ebx
+		push si
+		lea ebx, ds:fonegetcharcallgate
+		call far ptr [ebx]
+		
+		cmp ax, 0h
+		je end_output
+			mov si, ax
+			shl si, 1
+			push ax
+			lea bx, ds:scancodehandlers[si]
+			; lea bx, offset scanCodeHndl0
+			call near ptr [bx]
+		end_output:
+		
+		pop si
+		pop ebx
+		pop ax
+		ret
+	foneKeyboardOutput endp
+	
+	initKeyboardHandlers proc near
+		push bx
+		
+		lea bx, ds:scancodehandlers
+		
+		mov ds:[bx+3ch], offset scanCodeHndlA
+		mov ds:[bx+60h], offset scanCodeHndlB
+		mov ds:[bx+5ch], offset scanCodeHndlC
+		mov ds:[bx+40h], offset scanCodeHndlD
+		mov ds:[bx+24h], offset scanCodeHndlE
+		mov ds:[bx+42h], offset scanCodeHndlF
+		mov ds:[bx+44h], offset scanCodeHndlG
+		mov ds:[bx+46h], offset scanCodeHndlH
+		mov ds:[bx+2eh], offset scanCodeHndlI
+		mov ds:[bx+48h], offset scanCodeHndlJ
+		mov ds:[bx+4ah], offset scanCodeHndlK
+		mov ds:[bx+4ch], offset scanCodeHndlL
+		mov ds:[bx+64h], offset scanCodeHndlM
+		mov ds:[bx+62h], offset scanCodeHndlN
+		mov ds:[bx+30h], offset scanCodeHndlO
+		mov ds:[bx+32h], offset scanCodeHndlP
+		mov ds:[bx+20h], offset scanCodeHndlQ
+		mov ds:[bx+26h], offset scanCodeHndlR
+		mov ds:[bx+3eh], offset scanCodeHndlS
+		mov ds:[bx+28h], offset scanCodeHndlT
+		mov ds:[bx+2ch], offset scanCodeHndlU
+		mov ds:[bx+5eh], offset scanCodeHndlV
+		mov ds:[bx+22h], offset scanCodeHndlW
+		mov ds:[bx+5ah], offset scanCodeHndlX
+		mov ds:[bx+2ah], offset scanCodeHndlY
+		mov ds:[bx+58h], offset scanCodeHndlZ
+		                 
+		mov ds:[bx+16h], offset scanCodeHndl0
+		mov ds:[bx+04h], offset scanCodeHndl1
+		mov ds:[bx+06h], offset scanCodeHndl2
+		mov ds:[bx+08h], offset scanCodeHndl3
+		mov ds:[bx+0ah], offset scanCodeHndl4
+		mov ds:[bx+0ch], offset scanCodeHndl5
+		mov ds:[bx+0eh], offset scanCodeHndl6
+		mov ds:[bx+10h], offset scanCodeHndl7
+		mov ds:[bx+12h], offset scanCodeHndl8
+		mov ds:[bx+14h], offset scanCodeHndl9
+		                  
+		pop bx            
+	                      
+		ret 
+	initKeyboardHandlers endp
+	
+	scanCodeStub proc near
+		ret 2
+	scanCodeStub endp
+	
+	PRINT_CHAR macro char
+		push ax
+		push bx
+		
+		mov ax, char
+		mov ah, 70h
+		push ax
+		lea bx, ds:foneputcharcallgate
+		call far ptr [ebx]
+		
+		pop bx
+		pop ax
+		ret 2
+	endm
+	
+	scanCodeHndl0 proc near 
+		PRINT_CHAR '0'
+	scanCodeHndl0 endp
+	
+	scanCodeHndl1 proc near 
+		PRINT_CHAR '1'
+	scanCodeHndl1 endp
+	
+	scanCodeHndl2 proc near 
+		PRINT_CHAR '2'
+	scanCodeHndl2 endp
+	
+	scanCodeHndl3 proc near 
+		PRINT_CHAR '3'
+	scanCodeHndl3 endp
+	
+	scanCodeHndl4 proc near 
+		PRINT_CHAR '4'
+	scanCodeHndl4 endp
+	
+	scanCodeHndl5 proc near 
+		PRINT_CHAR '5'
+	scanCodeHndl5 endp
+	
+	scanCodeHndl6 proc near 
+		PRINT_CHAR '6'
+	scanCodeHndl6 endp
+	
+	scanCodeHndl7 proc near 
+		PRINT_CHAR '7'
+	scanCodeHndl7 endp
+	
+	scanCodeHndl8 proc near 
+		PRINT_CHAR '8'
+	scanCodeHndl8 endp
+	
+	scanCodeHndl9 proc near 
+		PRINT_CHAR '9'
+	scanCodeHndl9 endp
+	
+	scanCodeHndlA proc near 
+		PRINT_CHAR 'a'
+	scanCodeHndlA endp
+	
+	scanCodeHndlB proc near 
+		PRINT_CHAR 'b'
+	scanCodeHndlB endp
+	
+	scanCodeHndlC proc near 
+		PRINT_CHAR 'c'
+	scanCodeHndlC endp
+	
+	scanCodeHndlD proc near 
+		PRINT_CHAR 'd'
+	scanCodeHndlD endp
+	
+	scanCodeHndlE proc near 
+		PRINT_CHAR 'e'
+	scanCodeHndlE endp
+	
+	scanCodeHndlF proc near 
+		PRINT_CHAR 'f'
+	scanCodeHndlF endp
+	
+	scanCodeHndlG proc near 
+		PRINT_CHAR 'g'
+	scanCodeHndlG endp
+	
+	scanCodeHndlH proc near 
+		PRINT_CHAR 'h'
+	scanCodeHndlH endp
+	
+	scanCodeHndlI proc near 
+		PRINT_CHAR 'i'
+	scanCodeHndlI endp
+	
+	scanCodeHndlJ proc near 
+		PRINT_CHAR 'j'
+	scanCodeHndlJ endp
+	
+	scanCodeHndlK proc near 
+		PRINT_CHAR 'k'
+	scanCodeHndlK endp
+	
+	scanCodeHndlL proc near 
+		PRINT_CHAR 'l'
+	scanCodeHndlL endp
+	
+	scanCodeHndlM proc near 
+		PRINT_CHAR 'm'
+	scanCodeHndlM endp
+	
+	scanCodeHndlN proc near 
+		PRINT_CHAR 'n'
+	scanCodeHndlN endp
+	
+	scanCodeHndlO proc near 
+		PRINT_CHAR 'o'
+	scanCodeHndlO endp
+	
+	scanCodeHndlP proc near 
+		PRINT_CHAR 'p'
+	scanCodeHndlP endp
+	
+	scanCodeHndlQ proc near 
+		PRINT_CHAR 'q'
+	scanCodeHndlQ endp
+	
+	scanCodeHndlR proc near 
+		PRINT_CHAR 'r'
+	scanCodeHndlR endp
+	
+	scanCodeHndlS proc near 
+		PRINT_CHAR 's'
+	scanCodeHndlS endp
+	
+	scanCodeHndlT proc near 
+		PRINT_CHAR 't'
+	scanCodeHndlT endp
+	
+	scanCodeHndlU proc near 
+		PRINT_CHAR 'u'
+	scanCodeHndlU endp
+	
+	scanCodeHndlV proc near 
+		PRINT_CHAR 'v'
+	scanCodeHndlV endp
+	
+	scanCodeHndlW proc near 
+		PRINT_CHAR 'w'
+	scanCodeHndlW endp
+	
+	scanCodeHndlX proc near 
+		PRINT_CHAR 'x'
+	scanCodeHndlX endp
+	
+	scanCodeHndlY proc near 
+		PRINT_CHAR 'y'
+	scanCodeHndlY endp
+	
+	scanCodeHndlZ proc near 
+		PRINT_CHAR 'z'
+	scanCodeHndlZ endp
 	
 	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
