@@ -278,6 +278,10 @@ WK2:
 	; callgates for keyboard
 	putcharcallgate gatedescriptor { offset putchar, 08h, 0E401h, 0h } 
 	getcharcallgate gatedescriptor { offset getchar, 08h, 0E400h, 0h } 
+	addrowcallgate gatedescriptor { offset addrow, 08h, 0E401h, 0h } 
+	addcolcallgate gatedescriptor { offset addcol, 08h, 0E401h, 0h } 
+	getcurrowcallgate gatedescriptor { offset getcurrow, 08h, 0E400h, 0h } 
+	getcurcolcallgate gatedescriptor { offset getcurcol, 08h, 0E400h, 0h } 
 	gdtsize = $ - nulldesc
 	
 	; IDT
@@ -504,6 +508,10 @@ WK2:
 		mov es:fonecallgateprintcounter, 5B0000h 
 		mov es:foneputcharcallgate, 8B0000h
 		mov es:fonegetcharcallgate, 930000h
+		mov es:foneaddrowcallgate, 9B0000h
+		mov es:foneaddcolcallgate, 0A30000h
+		mov es:fonegetcurrowcallgate, 0AB0000h
+		mov es:fonegetcurcolcallgate, 0B30000h
 		mov eax, ds:itoahcallptr
 		mov es:foneitoahconformptr, eax
 		
@@ -953,6 +961,80 @@ WK2:
 		pop bp
 		retf 2
 	putchar endp
+	
+	addrow proc far
+		push bp
+		mov bp, sp
+		push ax
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, ds:cursorrowpos
+		add ax, [bp+6]
+		
+		cmp ax, SCREEN_ROWS
+		jb not_overflow
+			xor ax, ax
+		not_overflow:
+		
+		mov ds:cursorrowpos, ax
+		
+		pop ds
+		pop ax
+		pop bp
+		retf 2
+	addrow endp
+	
+	getcurrow proc far
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, ds:cursorrowpos
+
+		pop ds
+		retf
+	getcurrow endp
+	
+	addcol proc far
+		push bp
+		mov bp, sp
+		push ax
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, ds:cursorcolpos
+		add ax, [bp+6]
+		
+		cmp ax, SCREEN_COLS
+		jb not_overflow
+			xor ax, ax
+		not_overflow:
+		
+		mov ds:cursorcolpos, ax
+		
+		pop ds
+		pop ax
+		pop bp
+		retf 2
+	addcol endp
+	
+	getcurcol proc far
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, ds:cursorcolpos
+
+		pop ds
+		retf
+	getcurcol endp
 	
 	; interrupt handles
 	
@@ -1480,6 +1562,10 @@ fonedatasg SEGMENT PARA USE16 'DATA'
 	
 	foneputcharcallgate dd 0h
 	fonegetcharcallgate dd 0h
+	foneaddrowcallgate dd 0h
+	foneaddcolcallgate dd 0h
+	fonegetcurrowcallgate dd 0h
+	fonegetcurcolcallgate dd 0h
 	
 	kbdRegister db 0h
 	KBD_REGISTER_NO_SHIFT = 0h
@@ -1625,6 +1711,7 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		
 		mov ds:[bx+54h], offset scanCodeHndlShiftOn
 		mov ds:[bx+154h], offset scanCodeHndlShiftOff
+		mov ds:[bx+38h], offset scanCodeHndlEnter
 		                  
 		pop bx            
 	                      
@@ -1868,6 +1955,29 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		mov ds:kbdRegister, KBD_REGISTER_NO_SHIFT
 		ret 2
 	scanCodeHndlShiftOff endp
+	
+	scanCodeHndlEnter proc near 
+		push ax
+		push ebx
+		
+		push 1h
+		lea ebx, ds:foneaddrowcallgate
+		call far ptr [ebx]
+		
+		lea ebx, ds:fonegetcurcolcallgate
+		call far ptr [ebx]
+		
+		xor bx, bx
+		sub bx, ax
+		
+		push bx
+		lea ebx, ds:foneaddcolcallgate
+		call far ptr [ebx]
+		
+		pop ebx
+		pop ax
+		ret 2
+	scanCodeHndlEnter endp
 	
 	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
