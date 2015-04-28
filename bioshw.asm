@@ -1713,6 +1713,7 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		mov ds:[bx+154h], offset scanCodeHndlShiftOff
 		mov ds:[bx+38h], offset scanCodeHndlEnter
 		mov ds:[bx+1eh], offset scanCodeHndlTab
+		mov ds:[bx+1ch], offset scanCodeHndlBackspace
 		                  
 		pop bx            
 	                      
@@ -1993,6 +1994,27 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 		pop cx
 		ret 2
 	scanCodeHndlTab endp
+	
+	scanCodeHndlBackspace proc near 
+		push ax
+		
+		mov ax, -1
+		
+		push ax
+		lea ebx, ds:foneaddcolcallgate
+		call far ptr [ebx]
+		
+		push ' '
+		push ' '
+		call printChar
+		
+		push ax
+		lea ebx, ds:foneaddcolcallgate
+		call far ptr [ebx]
+		
+		pop ax
+		ret 2
+	scanCodeHndlBackspace endp
 	
 	fonecodesgsize = $ - beginfonecodesg
 fonecodesg ends
