@@ -1258,8 +1258,11 @@ WK2:
 				; if tail equal head don`t save tail
 				; buff is overflow
 				cmp si, ds:kbdbuffhead
-				je end_save_tail
+				je tail_equal_head
 					mov ds:kbdbufftail, si
+					jmp end_save_tail
+				tail_equal_head:
+					mov si, ds:kbdbufftail
 				end_save_tail:
 				
 				
