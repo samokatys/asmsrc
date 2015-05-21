@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 0020h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 000ch, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -282,10 +282,9 @@ WK2:
 	addcolcallgate gatedescriptor { offset addcol, 08h, 0E401h, 0h } 
 	getcurrowcallgate gatedescriptor { offset getcurrow, 08h, 0E400h, 0h } 
 	getcurcolcallgate gatedescriptor { offset getcurcol, 08h, 0E400h, 0h } 
+	; paging data segment
+	pagingdatadesc segmentdescriptor { 10h, 0h, 20h, 9092h, 0 }  ; G = 1 64KByte limit
 	gdtsize = $ - nulldesc
-	
-	mainpde dd 1024 dup(0) ; p - set 0
-	directpte dd 1024 dup(0) 
 	
 	; IDT
 	inthndls gatedescriptor 32 dup ({ 0h, 0h, 8700h, 0h }) ; 8600h - interrupt gate
@@ -665,37 +664,41 @@ WK2:
 	prepareFoneTSS endp
 	
 	setPaging proc near
-		lea eax, directpte
-		add eax, 7c00h
-		shl eax, 12
-		or eax, 7h
-		mov ds:mainpde[0], eax
+		push ds
+		
+		mov ax, 0B8h
+		mov ds, ax
 		
 		xor ebx, ebx
-		; fill first 256 entries because we use 32bit paging
-		mov cx, 0FFh 
+		mov eax, 24000h ; pointer to first entry in pte
+		mov ds:[bx], eax
+		
+		xor ebx, ebx
+		mov cx, 0400h 
 		init_page_table:
 			mov ax, bx
 			mov dx, 4h
 			mul dx
+			add ax, 4000h
 			mov si, ax
 			
 			mov eax, ebx
-			shl eax, 24 ; 12(flags) + 12(addr)
+			shl eax, 12 ; 12(flags)
 			or eax, 7h
 			
-			mov ds:directpte[si], eax
+			mov ds:[si], eax
 			
 			inc bx
 		loop init_page_table
 		
-		lea eax, ds:mainpde
-		add eax, 7c00h
+		mov eax, 20000h ; last 24 bits - reserved or params
 		mov cr3, eax
 		
 		mov eax, cr0
-		or eax, 4000h
+		or eax, 8000h
 		mov cr0, eax
+		
+		pop ds
 		
 		ret
 	setPaging endp
@@ -1442,8 +1445,6 @@ WK2:
 	
 	codesgsize = $ - begincodesg
 codesg ENDS
-
-
 
 conformcodesg SEGMENT PARA USE16 'CODE'
 	beginconformcodesg = $
