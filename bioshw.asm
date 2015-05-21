@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 000ah, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 0020h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -250,7 +250,7 @@ WK2:
 	
 	; GDT
 	nulldesc segmentdescriptor {}
-	codedesc segmentdescriptor { codesgsize, 7C00h, 0, 109Ah, 0 }
+	codedesc segmentdescriptor { codesgsize, 7C00h, 0h, 109Ah, 0 }
 	datadesc segmentdescriptor { codesgsize, 7C00h, 0, 1092h, 0 }
 	stackdesc segmentdescriptor { 0h, 0D000h, 0h, 1096h, 0h }
 	videotextdesc segmentdescriptor { 0, 8000h, 0Bh, 1192h, 0 }
@@ -283,6 +283,9 @@ WK2:
 	getcurrowcallgate gatedescriptor { offset getcurrow, 08h, 0E400h, 0h } 
 	getcurcolcallgate gatedescriptor { offset getcurcol, 08h, 0E400h, 0h } 
 	gdtsize = $ - nulldesc
+	
+	mainpde dd 1024 dup(0) ; p - set 0
+	directpte dd 1024 dup(0) 
 	
 	; IDT
 	inthndls gatedescriptor 32 dup ({ 0h, 0h, 8700h, 0h }) ; 8600h - interrupt gate
@@ -471,6 +474,8 @@ WK2:
 		; cpu load stored data in segment like cs:ip
 		nexttaskstep = $
 		
+		call setPaging
+		
 		in al,70h
 		and al,07fh
 		out 70h,al
@@ -658,6 +663,42 @@ WK2:
 		
 		ret
 	prepareFoneTSS endp
+	
+	setPaging proc near
+		lea eax, directpte
+		add eax, 7c00h
+		shl eax, 12
+		or eax, 7h
+		mov ds:mainpde[0], eax
+		
+		xor ebx, ebx
+		; fill first 256 entries because we use 32bit paging
+		mov cx, 0FFh 
+		init_page_table:
+			mov ax, bx
+			mov dx, 4h
+			mul dx
+			mov si, ax
+			
+			mov eax, ebx
+			shl eax, 24 ; 12(flags) + 12(addr)
+			or eax, 7h
+			
+			mov ds:directpte[si], eax
+			
+			inc bx
+		loop init_page_table
+		
+		lea eax, ds:mainpde
+		add eax, 7c00h
+		mov cr3, eax
+		
+		mov eax, cr0
+		or eax, 4000h
+		mov cr0, eax
+		
+		ret
+	setPaging endp
 	
 	; cli and sti must call outside this function
 	reinitPIC proc near
