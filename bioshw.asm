@@ -42,7 +42,7 @@ codesg SEGMENT PARA USE16 'CODE'
 		absnumstartsec	db 8 dup(?)
 	dapstruct ends
 	
-	readdap dapstruct {10h, 0h, 000ch, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
+	readdap dapstruct {10h, 0h, 0018h, 0h, 07E0h, {01h, 00h, 00h, 00h, 00h, 00h, 00h, 00h} }
 	
 main:
 	mov ax, 7C0h
@@ -501,6 +501,14 @@ WK2:
 		int 3h
 		
 		; virtual memory work
+		pushd 30000000h
+		pushd 300000h
+		call setVirtualMemory
+		
+		pushd 40000000h
+		pushd 400000h
+		call setVirtualMemory
+		
 		call printVirtualAddressStrings
 		
 		call prepareFoneTSS
@@ -678,13 +686,20 @@ WK2:
 	
 	setPaging proc near
 		push ds
+		push es
 		
-		mov ax, 0B8h
+		mov ax, 10h
 		mov ds, ax
+		mov ax, 0B8h
+		mov es, ax
 		
 		xor ebx, ebx
 		mov eax, 201007h ; pointer to first entry in pte
-		mov ds:[bx], eax
+		mov es:[bx], eax
+		
+		mov eax, ds:usedpages
+		inc eax
+		mov ds:usedpages, eax
 		
 		xor ebx, ebx
 		mov cx, 0400h 
@@ -698,26 +713,14 @@ WK2:
 			shl eax, 12 ; 12(flags)
 			or eax, 7h
 			
-			mov ds:[si], eax
+			mov es:[si], eax
 			
 			inc bx
 		loop init_page_table
 		
-		mov bx, 0C0h 
-		shl bx, 2 ; mul 4 bytes
-		mov eax, 202007h ; second table for pde = 0xc0 => 30 00 00 00 
-		mov ds:[bx], eax 
-		mov si, 2000h
-		mov eax, 300007h ; pointer to 30 00 00 physical address 
-		mov ds:[si], eax 
-		
-		mov bx, 100h 
-		shl bx, 2 ; mul 4 bytes
-		mov eax, 203007h ; third table for pde = 0x100 => 40 00 00 00
-		mov ds:[bx], eax 
-		mov si, 3000h
-		mov eax, 400007h ; pointer to 40 00 00 physical address 
-		mov ds:[si], eax
+		mov eax, ds:usedpages
+		inc eax
+		mov ds:usedpages, eax
 		
 		mov eax, 200000h ; last 12 bits - reserved or params
 		mov cr3, eax
@@ -726,6 +729,7 @@ WK2:
 		or eax, 80000000h
 		mov cr0, eax
 		
+		pop es
 		pop ds
 		
 		ret
@@ -778,6 +782,133 @@ WK2:
 		
 		ret
 	printVirtualAddressStrings endp
+	
+	usedpages dd 0h
+	; doubleword virtualAddr
+	; doubleword physicalAddr
+	; eax return error code 
+	; 0 - no error
+	; 1 - not enough space for table
+	setVirtualMemory proc near
+		push bp
+		mov bp, sp
+		push ebx
+		push ecx
+		push si
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, 0B8h
+		mov es, ax
+
+		mov ebx, [bp+8] ; virtual address
+		and ebx, 0FFC00000h ; save first 10 bit
+		shr ebx, 20 ; pde number * 4 bytes = offset
+		mov eax, es:[ebx]
+		test eax, 1h ; P == 1
+		jnz already_allocate ; already had table for pde
+		; allocate memory for table
+			mov ecx, ds:usedpages
+			; check enough space for new page
+			push 0B8h
+			call segmentLimit
+			shr eax, 12 ; number of pages
+			cmp ecx, eax
+			jae not_enough_pages ; error state
+			; fill pde entry
+			shl ecx, 12 ; offset of page segment; pointer to new table
+			or ecx, 7h ; p=1 r/w=1 u/s=1
+			add ecx, 200000h ; add base
+			mov es:[ebx], ecx
+			; add to use page counter
+			mov eax, ds:usedpages
+			mov ecx, eax
+			shl ecx, 12
+			inc eax
+			mov ds:usedpages, eax
+			jmp end_alloc_table
+		already_allocate:
+			mov ecx, eax
+			and ecx, 0FFFFFFF8h
+			sub ecx, 200000h
+		end_alloc_table:
+		
+		; fill pte entry
+		mov ebx, [bp+8]
+		and ebx, 3FF000h ; get pte
+		shr ebx, 10 ; pte number * 4 bytes = offset
+		mov eax, [bp+4] ; physical address
+		or eax, 7h
+		add ebx, ecx
+		mov es:[ebx], eax
+		
+		no_error:
+			mov eax, 0
+			jmp end_error_handling
+		not_enough_pages:
+			mov eax, 1
+		end_error_handling:
+		
+		pop es
+		pop ds
+		pop si
+		pop ecx
+		pop ebx
+		pop bp
+		
+		ret 8
+	setVirtualMemory endp
+	
+	
+	; ret eax - size
+	segmentLimit proc near
+		push bp
+		mov bp, sp
+		push ebx
+		xor ebx, ebx
+		push si
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, [bp+4]
+		shr ax, 3 ; segment number
+		mov bx, sizeof segmentdescriptor
+		mul bx ; segment descriptor offset
+		lea bx, ds:nulldesc
+		add ax, bx
+		
+		mov si, ax ; pointer to descriptor
+		mov bx, ds:[si].segmentdescriptor.params
+		
+		; most significant bits
+		and bx, 0F00h
+		xor eax, eax
+		mov ax, bx
+		shl eax, 8
+		; other bits
+		mov bx, ds:[si].segmentdescriptor.seglimit1
+		or eax, ebx
+		
+		; check G == 1
+		mov bx, ds:[si].segmentdescriptor.params
+		test bx, 8000h
+		jz end_of_calc
+		; G = 1
+			shl eax, 12
+			or eax, 0FFFh
+		end_of_calc:
+		
+		pop ds
+		pop si
+		pop ebx
+		pop bp
+		ret 2
+	segmentLimit endp
 	
 	
 	; cli and sti must call outside this function
