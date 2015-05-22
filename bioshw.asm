@@ -1011,7 +1011,7 @@ WK2:
 		call far ptr [ebx]
 
 		push 4fh - inthndlstrsize
-		push [bp+4]
+		push [bp+6]
 		mov ax, inthndlstrsize
 		push ax
 		lea ebp, inthndlstr
