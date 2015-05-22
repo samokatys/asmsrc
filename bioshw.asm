@@ -467,13 +467,13 @@ WK2:
 		mov ax, 18h
 		mov ss, ax	
 		
+		call setPaging
+		
 		call prepareTSS
 		ltr taskreg
 		; when we load task in register
 		; cpu load stored data in segment like cs:ip
 		nexttaskstep = $
-		
-		call setPaging
 		
 		in al,70h
 		and al,07fh
@@ -639,6 +639,9 @@ WK2:
 		mov ds:tsssegment.ss0, ss
 		mov ds:tsssegment.esp0, 0FFFFh
 		
+		mov eax, cr3
+		mov ds:tsssegment.cr3_pdbr, eax
+		
 		ret
 	prepareTSS endp
 	
@@ -660,6 +663,9 @@ WK2:
 		mov ds:fonetsssegment.ss0, 78h ; 15 GDT
 		mov ds:fonetsssegment.esp0, 0FFFFh
 		
+		mov eax, cr3
+		mov ds:fonetsssegment.cr3_pdbr, eax
+		
 		ret
 	prepareFoneTSS endp
 	
@@ -670,16 +676,15 @@ WK2:
 		mov ds, ax
 		
 		xor ebx, ebx
-		mov eax, 24000h ; pointer to first entry in pte
+		mov eax, 201007h ; pointer to first entry in pte
 		mov ds:[bx], eax
 		
 		xor ebx, ebx
 		mov cx, 0400h 
 		init_page_table:
 			mov ax, bx
-			mov dx, 4h
-			mul dx
-			add ax, 4000h
+			shl ax, 2
+			add ax, 1000h
 			mov si, ax
 			
 			mov eax, ebx
@@ -691,11 +696,11 @@ WK2:
 			inc bx
 		loop init_page_table
 		
-		mov eax, 20000h ; last 24 bits - reserved or params
+		mov eax, 200000h ; last 12 bits - reserved or params
 		mov cr3, eax
 		
 		mov eax, cr0
-		or eax, 8000h
+		or eax, 80000000h
 		mov cr0, eax
 		
 		pop ds
