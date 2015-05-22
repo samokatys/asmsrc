@@ -284,6 +284,7 @@ WK2:
 	getcurcolcallgate gatedescriptor { offset getcurcol, 08h, 0E400h, 0h } 
 	; paging data segment
 	pagingdatadesc segmentdescriptor { 10h, 0h, 20h, 9092h, 0 }  ; G = 1 64KByte limit
+	bigdatadesc segmentdescriptor { 0FFFFh, 0h, 0h, 9F92h, 0 } ; G = 1 4GByte limit
 	gdtsize = $ - nulldesc
 	
 	; IDT
@@ -332,6 +333,11 @@ WK2:
 	int8counter dd 0h
 	int8outputstr db '0x00000000'
 	int8outputstrsize = $ - int8outputstr
+	
+	virt1str db 'Virtual memory string 1'
+	virt1strsize = $ - virt1str
+	virt2str db 'Virtual memory string 2'
+	virt2strsize = $ - virt2str
 	
 	tssseg32 struct
 		prevtasklink dw 0h
@@ -467,6 +473,7 @@ WK2:
 		mov ax, 18h
 		mov ss, ax	
 		
+		call prepareVirtualAddressStrings
 		call setPaging
 		
 		call prepareTSS
@@ -486,15 +493,15 @@ WK2:
 		push 18h
 		mov ax, endinitpestrsize
 		push ax
-		lea bp, endinitpestr
-		push bp
+		lea ebp, endinitpestr
+		push ebp
 		call printProtectedVGA
 		
-		
+		; test exception handlers
 		int 3h
-		; test int 0 handlers
-		;xor bx, bx
-		;div bx
+		
+		; virtual memory work
+		call printVirtualAddressStrings
 		
 		call prepareFoneTSS
 		
@@ -696,6 +703,22 @@ WK2:
 			inc bx
 		loop init_page_table
 		
+		mov bx, 0C0h 
+		shl bx, 2 ; mul 4 bytes
+		mov eax, 202007h ; second table for pde = 0xc0 => 30 00 00 00 
+		mov ds:[bx], eax 
+		mov si, 2000h
+		mov eax, 300007h ; pointer to 30 00 00 physical address 
+		mov ds:[si], eax 
+		
+		mov bx, 100h 
+		shl bx, 2 ; mul 4 bytes
+		mov eax, 203007h ; third table for pde = 0x100 => 40 00 00 00
+		mov ds:[bx], eax 
+		mov si, 3000h
+		mov eax, 400007h ; pointer to 40 00 00 physical address 
+		mov ds:[si], eax
+		
 		mov eax, 200000h ; last 12 bits - reserved or params
 		mov cr3, eax
 		
@@ -707,6 +730,55 @@ WK2:
 		
 		ret
 	setPaging endp
+	
+	prepareVirtualAddressStrings proc near
+		push es
+		
+		mov ax, 0C0h
+		mov es, ax
+		
+		lea esi, ds:virt1str
+		mov edi, 300000h 
+		mov cx, virt1strsize
+		copy_1_virtstr:
+			movsb es:[edi], ds:[esi]
+		loop copy_1_virtstr
+		
+		lea esi, ds:virt2str
+		mov edi, 400000h 
+		mov cx, virt2strsize
+		copy_2_virtstr:
+			movsb es:[edi], ds:[esi]
+		loop copy_2_virtstr
+		
+		pop es
+		
+		ret
+	prepareVirtualAddressStrings endp
+	
+	printVirtualAddressStrings proc near
+		push ds
+		
+		mov ax, 0C0h
+		mov ds, ax
+		
+		push 0h
+		push 17h
+		push virt1strsize
+		pushd 30000000h
+		call printProtectedVGA
+		
+		push virt1strsize
+		push 17h
+		push virt2strsize
+		pushd 40000000h
+		call printProtectedVGA
+		
+		pop ds
+		
+		ret
+	printVirtualAddressStrings endp
+	
 	
 	; cli and sti must call outside this function
 	reinitPIC proc near
@@ -739,52 +811,55 @@ WK2:
 	; stack:
 	; no checks out of buff, out vga buff
 	; 0 <= col < 80 0 <= row < 25(bochsrc default)
-	; col, row, buff_size, buff_ptr, ret_addr
+	; col, row, buff_size, buff_ptr(double word), ret_addr
 	printProtectedVGA proc near
-		push bp
+		push ebp
+		xor ebp, ebp
 		mov bp, sp
 		push es
 		push ax
 		push bx
 		push cx
 		push dx
-		push si
+		push esi
 		
-		mov ax, [bp+8] ; row
+		xor esi, esi
+		
+		mov ax, [bp+12] ; row
 		mov bx, 50h
 		mul bx
-		mov bx, [bp+10]
+		mov bx, [bp+14]
 		add bx, ax ; start pointer to vga buffer
 		shl bx, 1
 		
 		mov ax, 20h
 		mov es, ax
-		mov cx, [bp+6]
+		mov cx, [bp+10]
 		mov dx, cx
-		mov bp, [bp+4] ;pointer to string
+		mov ebp, [bp+6] ;pointer to string
 		output:
 			mov ah, 07Ch ; background and character color
 			mov si, dx
 			sub si, cx
-			mov al, ds:[bp+si]
+			mov al, ds:[ebp+esi]
 			
 			shl si, 1
-			mov es:[bx+si], ax
+			mov es:[bx+si], ax ; esi not need
 		loop output
 		
-		pop si
+		pop esi
 		pop dx
 		pop cx
 		pop bx
 		pop ax
 		pop es
-		pop bp
+		pop ebp
 		
-		ret 8
+		ret 10
 	printProtectedVGA endp
 	
 	printIntStr proc near
-		push bp
+		push ebp
 		mov bp, sp
 		push ds
 		push eax
@@ -794,7 +869,7 @@ WK2:
 		mov ds, ax
 		
 		xor eax, eax
-		mov ax, [bp+4]
+		mov ax, [bp+6]
 		lea bx, ds:inthndlstr
 		add bx, inthndlstrsize - 2h
 		
@@ -808,20 +883,20 @@ WK2:
 		push [bp+4]
 		mov ax, inthndlstrsize
 		push ax
-		lea bp, inthndlstr
-		push bp
+		lea ebp, inthndlstr
+		push ebp
 		call printProtectedVGA
 		
 		pop ebx
 		pop eax
 		pop ds
-		pop bp
+		pop ebp
 		
 		ret 2
 	printIntStr endp
 	
 	printPicStr proc near
-		push bp
+		push ebp
 		mov bp, sp
 		push ds
 		push eax
@@ -831,7 +906,7 @@ WK2:
 		mov ds, ax
 
 		xor eax, eax
-		mov ax, [bp+4]
+		mov ax, [bp+6]
 		lea bx, ds:pichndlstr
 		add bx, pichndlstrsize - 2h
 		
@@ -842,23 +917,23 @@ WK2:
 		call far ptr [ebx]
 		
 		push 28h
-		push [bp+4]
+		push [bp+6]
 		mov ax, pichndlstrsize
 		push ax
-		lea bp, pichndlstr
-		push bp
+		lea ebp, pichndlstr
+		push ebp
 		call printProtectedVGA
 		
 		pop ebx
 		pop eax
 		pop ds
-		pop bp
+		pop ebp
 		
 		ret 2
 	printPicStr endp
 	
 	printMultiplyResultStr proc far
-		push bp
+		push ebp
 		mov bp, sp
 		push ds
 		push eax
@@ -868,7 +943,7 @@ WK2:
 		mov ds, ax
 		
 		xor eax, eax
-		mov ax, [bp+4]
+		mov ax, [bp+6]
 		lea bx, ds:multiplyresultstr
 		add bx, multiplyresultstrsize - 2h
 		
@@ -882,47 +957,47 @@ WK2:
 		push 10h
 		mov ax, multiplyresultstrsize
 		push ax
-		lea bp, multiplyresultstr
-		push bp
+		lea ebp, multiplyresultstr
+		push ebp
 		call printProtectedVGA
 		
 		pop ebx
 		pop eax
 		pop ds
-		pop bp
+		pop ebp
 		
 		retf 2
 	printMultiplyResultStr endp
 	
 	; word task id, ptr to string, size string
 	printUserModeCounter proc far
-		push bp
+		push ebp
 		mov bp, sp
 		push ax
 		push bx
 		push cx
 		
-		mov ax, [bp+6] ; size
-		mov bx, [bp+8] ; string ptr
-		mov cx, [bp+10] ; task id
+		mov ax, [bp+8] ; size
+		mov bx, [bp+10] ; string ptr
+		mov cx, [bp+12] ; task id
 		
 		add cx, 0Ch
 		push 0h
 		push cx
 		push ax
-		push bx
+		pushd bx
 		call printProtectedVGA
 		
 		pop cx
 		pop bx
 		pop ax
-		pop bp
+		pop ebp
 		
 		retf 6
 	printUserModeCounter endp
 	
 	printInt8Counter proc near
-		push bp
+		push ebp
 		mov bp, sp
 		push ds
 		push eax
@@ -947,14 +1022,14 @@ WK2:
 		push 0h
 		mov ax, int8outputstrsize
 		push ax
-		lea bp, int8outputstr
-		push bp
+		lea ebp, int8outputstr
+		push ebp
 		call printProtectedVGA
 		
 		pop ebx
 		pop eax
 		pop ds
-		pop bp
+		pop ebp
 		
 		ret
 	printInt8Counter endp
@@ -1088,19 +1163,19 @@ WK2:
 	; interrupt handles
 	
 	intStubHndl proc far
-		push bp
+		push ebp
 		push ax
 		
 		push 4fh - intstubhndlstrsize
 		push 04h
 		mov ax, intstubhndlstrsize
 		push ax
-		lea bp, intstubhndlstr
-		push bp
+		lea ebp, intstubhndlstr
+		push ebp
 		call printProtectedVGA
 		
 		pop ax
-		pop bp
+		pop ebp
 		
 		iret
 	intStubHndl endp
