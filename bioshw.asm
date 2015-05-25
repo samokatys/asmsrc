@@ -1,4 +1,4 @@
-.386p
+.586p
 
 codesg SEGMENT PARA USE16 'CODE'
 	begincodesg = $
@@ -510,6 +510,7 @@ WK2:
 		call setVirtualMemory
 		
 		call printVirtualAddressStrings
+		call testResetVirtualAddress
 		
 		call prepareFoneTSS
 		
@@ -783,7 +784,29 @@ WK2:
 		ret
 	printVirtualAddressStrings endp
 	
+	testResetVirtualAddress proc near
+		push ds
+		
+		pushd 40000000h
+		pushd 300000h
+		call setVirtualMemory
+		
+		mov ax, 0C0h
+		mov ds, ax
+		
+		push 0h
+		push 16h
+		push virt1strsize
+		pushd 40000000h
+		call printProtectedVGA
+		
+		pop ds
+		
+		ret
+	testResetVirtualAddress endp
+	
 	usedpages dd 0h
+	clearedvirtualaddr dd 0h
 	; doubleword virtualAddr
 	; doubleword physicalAddr
 	; eax return error code 
@@ -794,6 +817,7 @@ WK2:
 		mov bp, sp
 		push ebx
 		push ecx
+		push edx
 		push si
 		push ds
 		push es
@@ -814,7 +838,7 @@ WK2:
 			mov ecx, ds:usedpages
 			; check enough space for new page
 			push 0B8h
-			call segmentLimit
+			call segmentSize
 			shr eax, 12 ; number of pages
 			cmp ecx, eax
 			jae not_enough_pages ; error state
@@ -832,7 +856,7 @@ WK2:
 			jmp end_alloc_table
 		already_allocate:
 			mov ecx, eax
-			and ecx, 0FFFFFFF8h
+			and ecx, 0FFFFF000h
 			sub ecx, 200000h
 		end_alloc_table:
 		
@@ -843,10 +867,18 @@ WK2:
 		mov eax, [bp+4] ; physical address
 		or eax, 7h
 		add ebx, ecx
+		mov edx, es:[ebx] 
 		mov es:[ebx], eax
+		test edx, 21h ; P = 1, A = 1 - entry cached in TLB
+		jz end_clear_tlb
+			mov dx, 0C0h
+			mov ds, dx
+			mov ebx, [bp+8]
+			invlpg ds:[ebx]
+		end_clear_tlb:
 		
 		no_error:
-			mov eax, 0
+			xor eax, eax
 			jmp end_error_handling
 		not_enough_pages:
 			mov eax, 1
@@ -855,6 +887,7 @@ WK2:
 		pop es
 		pop ds
 		pop si
+		pop edx
 		pop ecx
 		pop ebx
 		pop bp
@@ -864,7 +897,7 @@ WK2:
 	
 	
 	; ret eax - size
-	segmentLimit proc near
+	segmentSize proc near
 		push bp
 		mov bp, sp
 		push ebx
@@ -903,12 +936,14 @@ WK2:
 			or eax, 0FFFh
 		end_of_calc:
 		
+		inc eax
+		
 		pop ds
 		pop si
 		pop ebx
 		pop bp
 		ret 2
-	segmentLimit endp
+	segmentSize endp
 	
 	
 	; cli and sti must call outside this function
