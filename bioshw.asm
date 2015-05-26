@@ -959,11 +959,12 @@ WK2:
 		
 		pop ds
 		pop bx
-		pop ds
+		pop bp
 		
 		ret 2
 	getPointerToSegmentDescriptor endp
 	
+	; word - segment num
 	; ret eax - size
 	segmentSize proc near
 		push bp
@@ -976,6 +977,7 @@ WK2:
 		mov ax, 10h
 		mov ds, ax
 		
+		push [bp+4]
 		call getPointerToSegmentDescriptor
 		
 		mov si, ax ; pointer to descriptor
@@ -1008,8 +1010,16 @@ WK2:
 		ret 2
 	segmentSize endp
 	
-	; ret eax - size
+	; word - segment num
+	; ret eax - base address
 	segmentBaseAddress proc near
+		push bp
+		mov bp, sp
+		
+		
+		
+		pop bp
+		ret 2
 	segmentBaseAddress endp
 	
 	
