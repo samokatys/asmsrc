@@ -516,26 +516,8 @@ WK2:
 		
 		call prepareFoneTSS
 		
-		mov ax, 30h ; 6 in GDT
-		mov es, ax ; user mode data segment
-		mov es:callgateprintmultiply, 4B0000h
-		mov es:callgateprintcounter, 5B0000h 
-		mov eax, ds:itoahcallptr
-		mov es:itoahconformptr, eax
-		mov eax, ds:mulcallptr
-		mov es:mulconformptr, eax
-		
-		mov ax, 6Bh
-		mov es, ax
-		mov es:fonecallgateprintcounter, 5B0000h 
-		mov es:foneputcharcallgate, 8B0000h
-		mov es:fonegetcharcallgate, 930000h
-		mov es:foneaddrowcallgate, 9B0000h
-		mov es:foneaddcolcallgate, 0A30000h
-		mov es:fonegetcurrowcallgate, 0AB0000h
-		mov es:fonegetcurcolcallgate, 0B30000h
-		mov eax, ds:itoahcallptr
-		mov es:foneitoahconformptr, eax
+		call prepareUserModeSegment
+		call prepareFoneSegment
 		
 		;lea ebx, ptrtofonetss ; fone gdt
 		;jmp far ptr [ebx]
@@ -586,6 +568,61 @@ WK2:
 		
 		ret
 	prepareGDTR endp
+	
+	prepareUserModeSegment proc near
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov bx, seg usermodecodesg
+		shl bx, 4
+		add bx, 7c00h ; temporary segment physical address
+		
+		mov es:[bx+callgateprintmultiply], 4B0000h
+		mov es:[bx+callgateprintcounter], 5B0000h 
+		mov eax, ds:itoahcallptr
+		mov es:[bx+itoahconformptr], eax
+		mov eax, ds:mulcallptr
+		mov es:[bx+mulconformptr], eax
+		
+		pop es
+		pop ds
+		
+		ret
+	prepareUserModeSegment endp
+	
+	prepareFoneSegment proc near
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov bx, seg fonecodesg
+		shl bx, 4
+		add bx, 7c00h ; temporary segment physical address
+		
+		mov es:[bx+fonecallgateprintcounter], 5B0000h 
+		mov es:[bx+foneputcharcallgate], 8B0000h
+		mov es:[bx+fonegetcharcallgate], 930000h
+		mov es:[bx+foneaddrowcallgate], 9B0000h
+		mov es:[bx+foneaddcolcallgate], 0A30000h
+		mov es:[bx+fonegetcurrowcallgate], 0AB0000h
+		mov es:[bx+fonegetcurcolcallgate], 0B30000h
+		mov eax, ds:itoahcallptr
+		mov es:[bx+foneitoahconformptr], eax
+		
+		pop es
+		pop ds
+		
+		ret
+	prepareFoneSegment endp
 	
 	prepareIDTR proc
 		; compute idtr start 
