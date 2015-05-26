@@ -256,7 +256,7 @@ WK2:
 	videotextdesc segmentdescriptor { 0, 8000h, 0Bh, 1192h, 0 }
 	; user mode segments
 	usermodecodedesc segmentdescriptor { usermodecodesgsize, 0, 0, 10FAh, 0 }
-	usermodedatadesc segmentdescriptor { usermodedatasgsize, 0, 0, 10F2h, 0 }
+	usermodedatadesc segmentdescriptor { usermodecodesgsize, 0, 0, 10F2h, 0 }
 	usermodestackdesc segmentdescriptor { 0h, 0D000h, 1h, 10F6h, 0h }
 	; simply have function that multiply two numbers and return result in ax
 	coreconformcodedesc segmentdescriptor { conformcodesgsize, 0, 0, 109Eh, 0 } 
@@ -269,7 +269,7 @@ WK2:
 	printcountercallgate gatedescriptor { offset printUserModeCounter, 08h, 0E403h, 0h } 
 	; fone segments
 	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 0 }
-	fonedatadesc segmentdescriptor { fonedatasgsize, 0, 0, 10F2h, 0 }
+	fonedatadesc segmentdescriptor { fonecodesgsize, 0, 0, 10F2h, 0 }
 	fonestackdesc segmentdescriptor { 0h, 0D000h, 2h, 10F6h, 0h }
 	fonestack0desc segmentdescriptor { 0h, 0D000h, 3h, 1096h, 0h }
 	; fone tss
@@ -283,8 +283,9 @@ WK2:
 	getcurrowcallgate gatedescriptor { offset getcurrow, 08h, 0E400h, 0h } 
 	getcurcolcallgate gatedescriptor { offset getcurcol, 08h, 0E400h, 0h } 
 	; paging data segment
-	pagingdatadesc segmentdescriptor { 10h, 0h, 20h, 9092h, 0 }  ; G = 1 64KByte limit
+	pagingdata1desc segmentdescriptor { 0Fh, 0h, 20h, 9092h, 0 }  ; G = 1 64KByte limit
 	bigdatadesc segmentdescriptor { 0FFFFh, 0h, 0h, 9F92h, 0 } ; G = 1 4GByte limit
+	pagingdata2desc segmentdescriptor { 0Fh, 0h, 21h, 9092h, 0 }  ; G = 1 64KByte limit
 	gdtsize = $ - nulldesc
 	
 	; IDT
@@ -564,10 +565,6 @@ WK2:
 		shl bx, 4
 		add bx, ax
 		mov usermodecodedesc.segbase1, bx
-		
-		mov bx, seg usermodedatasg
-		shl bx, 4
-		add bx, ax
 		mov usermodedatadesc.segbase1, bx
 		
 		mov bx, seg conformcodesg
@@ -584,10 +581,6 @@ WK2:
 		shl bx, 4
 		add bx, ax
 		mov fonecodedesc.segbase1, bx
-		
-		mov bx, seg fonedatasg
-		shl bx, 4
-		add bx, ax
 		mov fonedatadesc.segbase1, bx
 		
 		ret
@@ -735,6 +728,57 @@ WK2:
 		
 		ret
 	setPaging endp
+	
+	; word - page segment num
+	initPDE proc near
+		push bp
+		mov bp, sp
+		push eax
+		push ebx
+		push cx
+		push si
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov es, [bp+4]
+		
+		xor ebx, ebx
+		mov eax, 201007h ; pointer to first entry in pte
+		mov es:[bx], eax
+		
+		mov eax, ds:usedpages
+		inc eax
+		mov ds:usedpages, eax
+		
+		xor ebx, ebx
+		mov cx, 0400h 
+		init_page_table:
+			mov ax, bx
+			shl ax, 2
+			add ax, 1000h
+			mov si, ax
+			
+			mov eax, ebx
+			shl eax, 12 ; 12(flags)
+			or eax, 7h
+			
+			mov es:[si], eax
+			
+			inc bx
+		loop init_page_table
+		
+		pop es
+		pop ds
+		pop si
+		pop cx
+		pop ebx
+		pop eax
+		pop bp
+		
+		ret 2
+	initPDE endp
 	
 	prepareVirtualAddressStrings proc near
 		push es
@@ -895,6 +939,30 @@ WK2:
 		ret 8
 	setVirtualMemory endp
 	
+	; word - segment num
+	; ret ax - ptr to descriptor
+	getPointerToSegmentDescriptor proc near
+		push bp
+		mov bp, sp
+		push bx
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov ax, [bp+4]
+		shr ax, 3 ; segment number
+		mov bx, sizeof segmentdescriptor
+		mul bx ; segment descriptor offset
+		lea bx, ds:nulldesc
+		add ax, bx
+		
+		pop ds
+		pop bx
+		pop ds
+		
+		ret 2
+	getPointerToSegmentDescriptor endp
 	
 	; ret eax - size
 	segmentSize proc near
@@ -908,12 +976,7 @@ WK2:
 		mov ax, 10h
 		mov ds, ax
 		
-		mov ax, [bp+4]
-		shr ax, 3 ; segment number
-		mov bx, sizeof segmentdescriptor
-		mul bx ; segment descriptor offset
-		lea bx, ds:nulldesc
-		add ax, bx
+		call getPointerToSegmentDescriptor
 		
 		mov si, ax ; pointer to descriptor
 		mov bx, ds:[si].segmentdescriptor.params
@@ -944,6 +1007,10 @@ WK2:
 		pop bp
 		ret 2
 	segmentSize endp
+	
+	; ret eax - size
+	segmentBaseAddress proc near
+	segmentBaseAddress endp
 	
 	
 	; cli and sti must call outside this function
@@ -1762,10 +1829,9 @@ conformcodesg SEGMENT PARA USE16 'CODE'
 conformcodesg ends	
 
 	
+usermodecodesg SEGMENT PARA USE16 'CODE'
+	beginusermodecodesg = $
 	
-usermodedatasg SEGMENT PARA USE16 'DATA'
-	beginusermodedatasg = $
-	; user mode data segment
 	var1 dw 0Ah
 	var2 dw 0Bh
 	counter dd 1000h
@@ -1777,12 +1843,7 @@ usermodedatasg SEGMENT PARA USE16 'DATA'
 	itoahconformptr dd 0h
 	callgateprintmultiply dd 0h
 	callgateprintcounter dd 0h
-
-	usermodedatasgsize = $ - beginusermodedatasg
-usermodedatasg ends
 	
-usermodecodesg SEGMENT PARA USE16 'CODE'
-	beginusermodecodesg = $
 	; user mode code segment
 	workInUserMode proc far
 		mov ax, 33h ; 7 number in GDT
@@ -1840,8 +1901,8 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 	usermodecodesgsize = $ - beginusermodecodesg
 usermodecodesg ends
 	
-fonedatasg SEGMENT PARA USE16 'DATA'
-	beginfonedatasg = $
+fonecodesg SEGMENT PARA USE16 'CODE'
+	beginfonecodesg = $
 	
 	fonecounter dd 0h
 	
@@ -1863,12 +1924,6 @@ fonedatasg SEGMENT PARA USE16 'DATA'
 	KBD_REGISTER_SHIFT = 1h
 	
 	scancodehandlers dw 256 dup(offset scanCodeStub)
-	
-	fonedatasgsize = $ - beginfonedatasg
-fonedatasg ends
-
-fonecodesg SEGMENT PARA USE16 'CODE'
-	beginfonecodesg = $
 	
 	foneStart proc far
 		mov ax, 6Bh
