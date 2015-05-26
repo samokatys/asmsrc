@@ -684,33 +684,9 @@ WK2:
 		
 		mov ax, 10h
 		mov ds, ax
-		mov ax, 0B8h
-		mov es, ax
 		
-		xor ebx, ebx
-		mov eax, 201007h ; pointer to first entry in pte
-		mov es:[bx], eax
-		
-		mov eax, ds:usedpages
-		inc eax
-		mov ds:usedpages, eax
-		
-		xor ebx, ebx
-		mov cx, 0400h 
-		init_page_table:
-			mov ax, bx
-			shl ax, 2
-			add ax, 1000h
-			mov si, ax
-			
-			mov eax, ebx
-			shl eax, 12 ; 12(flags)
-			or eax, 7h
-			
-			mov es:[si], eax
-			
-			inc bx
-		loop init_page_table
+		push 0B8h
+		call initPDE
 		
 		mov eax, ds:usedpages
 		inc eax
@@ -744,8 +720,10 @@ WK2:
 		mov ds, ax
 		mov es, [bp+4]
 		
+		push [bp+4]
+		call segmentBaseAddress
 		xor ebx, ebx
-		mov eax, 201007h ; pointer to first entry in pte
+		add eax, 1007h ; pointer to first entry in pte
 		mov es:[bx], eax
 		
 		mov eax, ds:usedpages
@@ -1015,9 +993,25 @@ WK2:
 	segmentBaseAddress proc near
 		push bp
 		mov bp, sp
+		push bx
+		push ds
 		
+		mov ax, 10h
+		mov ds, ax
 		
+		push [bp+4]
+		call getPointerToSegmentDescriptor
 		
+		mov bx, ax
+		xor eax, eax
+		mov al, ds:[bx].segmentdescriptor.segbase3
+		shl eax, 8
+		mov al, ds:[bx].segmentdescriptor.segbase2
+		shl eax, 16
+		mov ax, ds:[bx].segmentdescriptor.segbase1
+		
+		pop ds
+		pop bx
 		pop bp
 		ret 2
 	segmentBaseAddress endp
