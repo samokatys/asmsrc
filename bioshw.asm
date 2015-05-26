@@ -501,10 +501,12 @@ WK2:
 		int 3h
 		
 		; virtual memory work
+		push 0h
 		pushd 30000000h
 		pushd 300000h
 		call setVirtualMemory
 		
+		push 0h
 		pushd 40000000h
 		pushd 400000h
 		call setVirtualMemory
@@ -845,6 +847,7 @@ WK2:
 	testResetVirtualAddress proc near
 		push ds
 		
+		push 0h
 		pushd 40000000h
 		pushd 300000h
 		call setVirtualMemory
@@ -863,6 +866,7 @@ WK2:
 		ret
 	testResetVirtualAddress endp
 	
+	; word pde number(0,1,2...)
 	; doubleword virtualAddr
 	; doubleword physicalAddr
 	; eax return error code 
@@ -874,7 +878,6 @@ WK2:
 		push ebx
 		push ecx
 		push edx
-		push si
 		push ds
 		push es
 		
@@ -883,10 +886,14 @@ WK2:
 		
 		mov ax, 0B8h
 		mov es, ax
-
-		mov ebx, [bp+8] ; virtual address
-		and ebx, 0FFC00000h ; save first 10 bit
-		shr ebx, 20 ; pde number * 4 bytes = offset
+		
+		xor ebx, ebx
+		mov bx, [bp+12] ; pde number
+		shl ebx, 12 ; pde null entry address
+		mov edx, [bp+8] ; virtual address
+		and edx, 0FFC00000h ; save first 10 bit
+		shr edx, 20 ; pde number entry * 4 bytes = offset
+		add ebx, edx
 		mov eax, es:[ebx]
 		test eax, 1h ; P == 1
 		jnz already_allocate ; already had table for pde
@@ -949,13 +956,12 @@ WK2:
 		
 		pop es
 		pop ds
-		pop si
 		pop edx
 		pop ecx
 		pop ebx
 		pop bp
 		
-		ret 8
+		ret 10
 	setVirtualMemory endp
 	
 	; word - segment num
