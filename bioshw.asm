@@ -283,9 +283,8 @@ WK2:
 	getcurrowcallgate gatedescriptor { offset getcurrow, 08h, 0E400h, 0h } 
 	getcurcolcallgate gatedescriptor { offset getcurcol, 08h, 0E400h, 0h } 
 	; paging data segment
-	pagingdata1desc segmentdescriptor { 0Fh, 0h, 20h, 9092h, 0 }  ; G = 1 64KByte limit
-	bigdatadesc segmentdescriptor { 0FFFFh, 0h, 0h, 9F92h, 0 } ; G = 1 4GByte limit
-	pagingdata2desc segmentdescriptor { 0Fh, 0h, 21h, 9092h, 0 }  ; G = 1 64KByte limit
+	pagingdatadesc segmentdescriptor { 0FFh, 0h, 20h, 9092h, 0 }  ; G = 1 1MByte size
+	bigdatadesc segmentdescriptor { 0FFFFh, 0h, 0h, 9F92h, 0 } ; G = 1 4GByte size
 	gdtsize = $ - nulldesc
 	
 	; IDT
@@ -678,6 +677,10 @@ WK2:
 		ret
 	prepareFoneTSS endp
 	
+	maxpdenumber = 10h ; fixed cannot changed
+	pagingsegmentselector = 0B8h
+	usedptenumber dd 0h
+	
 	setPaging proc near
 		push ds
 		push es
@@ -687,10 +690,6 @@ WK2:
 		
 		push 0B8h
 		call initPDE
-		
-		mov eax, ds:usedpages
-		inc eax
-		mov ds:usedpages, eax
 		
 		mov eax, 200000h ; last 12 bits - reserved or params
 		mov cr3, eax
@@ -705,6 +704,8 @@ WK2:
 		ret
 	setPaging endp
 	
+	
+	
 	; word - page segment num
 	initPDE proc near
 		push bp
@@ -712,44 +713,36 @@ WK2:
 		push eax
 		push ebx
 		push cx
-		push si
-		push ds
 		push es
 		
-		mov ax, 10h
-		mov ds, ax
 		mov es, [bp+4]
 		
 		push [bp+4]
 		call segmentBaseAddress
-		xor ebx, ebx
-		add eax, 1007h ; pointer to first entry in pte
-		mov es:[bx], eax
 		
-		mov eax, ds:usedpages
+		mov ebx, eax ; base segment address
+		mov eax, maxpdenumber
+		shl eax, 12
+		add eax, ebx ; null pte address
+		
+		push eax
+		call initNullPTE
+		
+		or eax, 7h
+		mov cx, maxpdenumber
+		pde_null_entry_init:
+			mov bx, cx
+			dec bx
+			shl ebx, 12
+			
+			mov es:[ebx], eax
+		loop pde_null_entry_init
+		
+		mov eax, ds:usedptenumber
 		inc eax
-		mov ds:usedpages, eax
-		
-		xor ebx, ebx
-		mov cx, 0400h 
-		init_page_table:
-			mov ax, bx
-			shl ax, 2
-			add ax, 1000h
-			mov si, ax
-			
-			mov eax, ebx
-			shl eax, 12 ; 12(flags)
-			or eax, 7h
-			
-			mov es:[si], eax
-			
-			inc bx
-		loop init_page_table
+		mov ds:usedptenumber, eax		
 		
 		pop es
-		pop ds
-		pop si
 		pop cx
 		pop ebx
 		pop eax
@@ -757,6 +750,49 @@ WK2:
 		
 		ret 2
 	initPDE endp
+	
+	;double word - null pte address
+	initNullPTE proc near
+		push bp
+		mov bp, sp
+		push eax
+		push ebx
+		push cx
+		push dx
+		push esi
+		push es
+		
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov ebx, [bp+4]
+		xor dx, dx
+		mov cx, 0400h 
+		init_page_table:
+			xor esi, esi
+			mov si, dx
+			shl si, 2 ; * 4 bytes
+			
+			xor eax, eax
+			mov ax, dx
+			shl eax, 12 ; 12(flags)
+			or eax, 7h
+			
+			mov es:[ebx+esi], eax
+			
+			inc dx
+		loop init_page_table
+		
+		pop es
+		pop esi
+		pop dx
+		pop cx
+		pop ebx
+		pop eax
+		pop bp
+		
+		ret 4
+	initNullPTE endp
 	
 	prepareVirtualAddressStrings proc near
 		push es
@@ -827,8 +863,6 @@ WK2:
 		ret
 	testResetVirtualAddress endp
 	
-	usedpages dd 0h
-	clearedvirtualaddr dd 0h
 	; doubleword virtualAddr
 	; doubleword physicalAddr
 	; eax return error code 
@@ -857,29 +891,36 @@ WK2:
 		test eax, 1h ; P == 1
 		jnz already_allocate ; already had table for pde
 		; allocate memory for table
-			mov ecx, ds:usedpages
-			; check enough space for new page
+			mov ecx, ds:usedptenumber
+			add ecx, maxpdenumber
+			; check enough space for new pte
 			push 0B8h
 			call segmentSize
-			shr eax, 12 ; number of pages
+			shr eax, 12 ; max number of tables
 			cmp ecx, eax
 			jae not_enough_pages ; error state
 			; fill pde entry
+			push es
+			call segmentBaseAddress
 			shl ecx, 12 ; offset of page segment; pointer to new table
 			or ecx, 7h ; p=1 r/w=1 u/s=1
-			add ecx, 200000h ; add base
+			add ecx, eax ; add base
+			
 			mov es:[ebx], ecx
 			; add to use page counter
-			mov eax, ds:usedpages
+			mov eax, ds:usedptenumber
 			mov ecx, eax
+			add ecx, maxpdenumber
 			shl ecx, 12
 			inc eax
-			mov ds:usedpages, eax
+			mov ds:usedptenumber, eax
 			jmp end_alloc_table
 		already_allocate:
 			mov ecx, eax
 			and ecx, 0FFFFF000h
-			sub ecx, 200000h
+			push es
+			call segmentBaseAddress
+			sub ecx, eax
 		end_alloc_table:
 		
 		; fill pte entry
