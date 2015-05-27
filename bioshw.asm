@@ -255,8 +255,8 @@ WK2:
 	stackdesc segmentdescriptor { 0h, 0D000h, 0h, 1096h, 0h }
 	videotextdesc segmentdescriptor { 0, 8000h, 0Bh, 1192h, 0 }
 	; user mode segments
-	usermodecodedesc segmentdescriptor { usermodecodesgsize, 0, 0, 10FAh, 0 }
-	usermodedatadesc segmentdescriptor { usermodecodesgsize, 0, 0, 10F2h, 0 }
+	usermodecodedesc segmentdescriptor { usermodecodesgsize, 0, 0, 10FAh, 10h } ; base addr 10000000h
+	usermodedatadesc segmentdescriptor { usermodecodesgsize, 0, 0, 10F2h, 10h } ; base addr 10000000h
 	usermodestackdesc segmentdescriptor { 0h, 0D000h, 1h, 10F6h, 0h }
 	; simply have function that multiply two numbers and return result in ax
 	coreconformcodedesc segmentdescriptor { conformcodesgsize, 0, 0, 109Eh, 0 } 
@@ -268,8 +268,10 @@ WK2:
 	; print counter callgate
 	printcountercallgate gatedescriptor { offset printUserModeCounter, 08h, 0E403h, 0h } 
 	; fone segments
-	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 0 }
-	fonedatadesc segmentdescriptor { fonecodesgsize, 0, 0, 10F2h, 0 }
+	; fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 0 }
+	; fonedatadesc segmentdescriptor { fonecodesgsize, 0, 0, 10F2h, 0 }
+	fonecodedesc segmentdescriptor { fonecodesgsize, 0, 0, 10FAh, 10h } ; base addr 10000000h
+	fonedatadesc segmentdescriptor { fonecodesgsize, 0, 0, 10F2h, 10h } ; base addr 10000000h
 	fonestackdesc segmentdescriptor { 0h, 0D000h, 2h, 10F6h, 0h }
 	fonestack0desc segmentdescriptor { 0h, 0D000h, 3h, 1096h, 0h }
 	; fone tss
@@ -555,11 +557,11 @@ WK2:
 		
 		mov ax, 7c00h
 		
-		mov bx, seg usermodecodesg
-		shl bx, 4
-		add bx, ax
-		mov usermodecodedesc.segbase1, bx
-		mov usermodedatadesc.segbase1, bx
+		; mov bx, seg usermodecodesg
+		; shl bx, 4
+		; add bx, ax
+		; mov usermodecodedesc.segbase1, bx
+		; mov usermodedatadesc.segbase1, bx
 		
 		mov bx, seg conformcodesg
 		shl bx, 4
@@ -571,11 +573,11 @@ WK2:
 		add bx, ax
 		mov coreconformcodedesc.segbase1, bx
 		
-		mov bx, seg fonecodesg
-		shl bx, 4
-		add bx, ax
-		mov fonecodedesc.segbase1, bx
-		mov fonedatadesc.segbase1, bx
+		; mov bx, seg fonecodesg
+		; shl bx, 4
+		; add bx, ax
+		; mov fonecodedesc.segbase1, bx
+		; mov fonedatadesc.segbase1, bx
 		
 		ret
 	prepareGDTR endp
@@ -1787,6 +1789,16 @@ WK2:
 		mov ax, ds:tsssegment.ss0
 		mov ds:tsssegment.ss0, bx
 		mov ds:prevss0, ax
+		
+		mov eax, cr3
+		test eax, 1000h
+		jz next_pde
+			mov eax, 200000h
+			jmp end_pde_select
+		next_pde:
+			mov eax, 201000h
+		end_pde_select:
+		mov cr3, eax
 		
 		mov al, 20h
 		out 20h, al
