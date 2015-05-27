@@ -474,9 +474,6 @@ WK2:
 		mov ss, ax	
 		
 		call prepareVirtualAddressStrings
-		call prepareUserModeSegment
-		call prepareFoneSegment
-		
 		call setPaging
 		
 		call prepareTSS
@@ -511,13 +508,16 @@ WK2:
 		
 		push 0h
 		pushd 40000000h
-		pushd 301000h
+		pushd 400000h
 		call setVirtualMemory
 		
 		call printVirtualAddressStrings
 		call testResetVirtualAddress
 		
 		call prepareFoneTSS
+		
+		call prepareUserModeSegment
+		call prepareFoneSegment
 		
 		;lea ebx, ptrtofonetss ; fone gdt
 		;jmp far ptr [ebx]
@@ -578,7 +578,6 @@ WK2:
 		mov ax, 0C0h
 		mov es, ax
 		
-		xor ebx, ebx
 		mov bx, seg usermodecodesg
 		shl bx, 4
 		add bx, 7c00h ; temporary segment physical address
@@ -589,16 +588,6 @@ WK2:
 		mov es:[bx+itoahconformptr], eax
 		mov eax, ds:mulcallptr
 		mov es:[bx+mulconformptr], eax
-		
-		mov ax, 0C0h
-		mov ds, ax
-		
-		mov esi, ebx
-		mov edi, 400000h 
-		mov cx, usermodecodesgsize
-		; user_mode_code_move:
-			rep movsb es:[edi], ds:[esi]
-		; loop user_mode_code_move
 		
 		pop es
 		pop ds
@@ -615,7 +604,6 @@ WK2:
 		mov ax, 0C0h
 		mov es, ax
 		
-		xor ebx, ebx
 		mov bx, seg fonecodesg
 		shl bx, 4
 		add bx, 7c00h ; temporary segment physical address
@@ -629,16 +617,6 @@ WK2:
 		mov es:[bx+fonegetcurcolcallgate], 0B30000h
 		mov eax, ds:itoahcallptr
 		mov es:[bx+foneitoahconformptr], eax
-		
-		mov ax, 0C0h
-		mov ds, ax
-		
-		mov esi, ebx
-		mov edi, 410000h 
-		mov cx, fonecodesgsize
-		; fone_code_move:
-			rep movsb es:[edi], ds:[esi]
-		; loop fone_code_move
 		
 		pop es
 		pop ds
@@ -869,7 +847,7 @@ WK2:
 		loop copy_1_virtstr
 		
 		lea esi, ds:virt2str
-		mov edi, 301000h 
+		mov edi, 400000h 
 		mov cx, virt2strsize
 		copy_2_virtstr:
 			movsb es:[edi], ds:[esi]
