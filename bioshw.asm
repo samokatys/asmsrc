@@ -754,6 +754,40 @@ WK2:
 		mov eax, cr3
 		mov ds:fonetsssegment.cr3_pdbr, eax
 		
+		mov dx, ss
+		mov ebx, esp
+		
+		mov ax, 78h
+		mov ecx, 0FFFFh
+		mov ss, ax
+		mov esp, ecx
+		
+		; return stack
+		push 73h
+		push 0FFFFh
+		pushf
+		pop ax
+		or ax, 200h ; int on
+		push ax
+		push 63h
+		push offset foneStart
+		; stack registers
+		pushd 0h ; push eax
+		pushd 0h ; push ebx
+		pushd 0h ; push ecx
+		pushd 0h ; push edx
+		pushd 0h ; push esi
+		pushd 0h ; push edi
+		pushd 0h ; push ebp
+		push 6Bh ; push ds
+		push 6Bh ; push es
+		
+		mov ds:prevss0, ss
+		mov ds:prevesp0, esp
+		
+		mov ss, dx
+		mov esp, ebx
+		
 		ret
 	prepareFoneTSS endp
 	
@@ -1671,7 +1705,7 @@ WK2:
 	ptrtofonetss dd 800000h
 	
 	; timer
-	int32hndl proc far
+	int32hndl_tss proc far
 		push ax
 		push ebx
 		push ds
@@ -1700,6 +1734,54 @@ WK2:
 		pop ax
 		
 		iret
+	int32hndl_tss endp
+	
+	prevss0 dw 0h
+	prevesp0 dd 0h
+	int32hndl proc far
+		push eax
+		push ebx
+		push ecx
+		push edx
+		push esi
+		push edi
+		push ebp
+		push ds
+		push es
+		
+		call printInt8Counter
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		mov eax, esp
+		mov dx, ss
+		
+		mov ebx, ds:prevesp0
+		mov cx, ds:prevss0
+		mov ss, cx
+		mov esp, ebx
+		
+		mov ds:prevss0, dx
+		mov ds:prevesp0, eax
+		mov ds:tsssegment.ss0, ss
+		mov eax, esp
+		add eax, 32
+		mov ds:tsssegment.esp0, eax
+		
+		mov al, 20h
+		out 20h, al
+		
+		pop es
+		pop ds
+		pop ebp
+		pop edi
+		pop esi
+		pop edx
+		pop ecx
+		pop ebx
+		pop eax
+		iret	
 	int32hndl endp
 	
 	KBD_CMD_PORT = 64h
