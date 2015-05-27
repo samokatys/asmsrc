@@ -486,6 +486,16 @@ WK2:
 		nexttaskstep = $
 
 		call prepareFoneTSS
+		; set virtual address for user mode segments
+		push 0h
+		pushd 10000000h
+		pushd 400000h
+		call setVirtualMemory		
+		
+		push 1h
+		pushd 10000000h
+		pushd 410000h
+		call setVirtualMemory
 		
 		in al,70h
 		and al,07fh
@@ -602,7 +612,6 @@ WK2:
 		mov esi, ebx
 		mov edi, 400000h 
 		mov cx, usermodecodesgsize
-
 		rep movsb es:[edi], ds:[esi]
 		
 		pop es
@@ -652,7 +661,7 @@ WK2:
 		mov edi, 410000h 
 		mov cx, fonecodesgsize
 		rep movsb es:[edi], ds:[esi]
-		
+
 		pop es
 		pop ds
 		pop esi
@@ -1764,6 +1773,7 @@ WK2:
 		
 		mov ds:prevss0, dx
 		mov ds:prevesp0, eax
+		; bad style, we must save this params in other variables
 		mov ds:tsssegment.ss0, ss
 		mov eax, esp
 		add eax, 32
