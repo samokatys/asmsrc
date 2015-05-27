@@ -473,9 +473,9 @@ WK2:
 		mov ax, 18h
 		mov ss, ax	
 		
-		call prepareVirtualAddressStrings
 		call prepareUserModeSegment
 		call prepareFoneSegment
+		call prepareVirtualAddressStrings
 		
 		call setPaging
 		
@@ -484,6 +484,8 @@ WK2:
 		; when we load task in register
 		; cpu load stored data in segment like cs:ip
 		nexttaskstep = $
+
+		call prepareFoneTSS
 		
 		in al,70h
 		and al,07fh
@@ -517,7 +519,6 @@ WK2:
 		call printVirtualAddressStrings
 		call testResetVirtualAddress
 		
-		call prepareFoneTSS
 		
 		;lea ebx, ptrtofonetss ; fone gdt
 		;jmp far ptr [ebx]
@@ -570,6 +571,11 @@ WK2:
 	prepareGDTR endp
 	
 	prepareUserModeSegment proc near
+		push eax
+		push ebx
+		push cx
+		push edi
+		push esi
 		push ds
 		push es
 		
@@ -596,17 +602,26 @@ WK2:
 		mov esi, ebx
 		mov edi, 400000h 
 		mov cx, usermodecodesgsize
-		; user_mode_code_move:
-			rep movsb es:[edi], ds:[esi]
-		; loop user_mode_code_move
+
+		rep movsb es:[edi], ds:[esi]
 		
 		pop es
 		pop ds
+		pop esi
+		pop edi
+		pop cx
+		pop ebx
+		pop eax
 		
 		ret
 	prepareUserModeSegment endp
 	
 	prepareFoneSegment proc near
+		push eax
+		push ebx
+		push cx
+		push edi
+		push esi
 		push ds
 		push es
 		
@@ -636,12 +651,15 @@ WK2:
 		mov esi, ebx
 		mov edi, 410000h 
 		mov cx, fonecodesgsize
-		; fone_code_move:
-			rep movsb es:[edi], ds:[esi]
-		; loop fone_code_move
+		rep movsb es:[edi], ds:[esi]
 		
 		pop es
 		pop ds
+		pop esi
+		pop edi
+		pop cx
+		pop ebx
+		pop eax
 		
 		ret
 	prepareFoneSegment endp
@@ -727,6 +745,7 @@ WK2:
 		xor eax, eax
 		pushf
 		pop ax
+		or ax, 200h ; int on
 		mov ds:fonetsssegment.eflags, eax
 		
 		mov ds:fonetsssegment.ss0, 78h ; 15 GDT
