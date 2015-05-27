@@ -791,8 +791,10 @@ WK2:
 		push 6Bh ; push ds
 		push 6Bh ; push es
 		
-		mov ds:prevss0, ss
-		mov ds:prevesp0, esp
+		mov ds:prevss, ss
+		mov ds:prevesp, esp
+		mov ds:prevss0, 78h
+		mov ds:prevesp0, 0FFFFh
 		
 		mov ss, dx
 		mov esp, ebx
@@ -1745,6 +1747,8 @@ WK2:
 		iret
 	int32hndl_tss endp
 	
+	prevss dw 0h
+	prevesp dd 0h
 	prevss0 dw 0h
 	prevesp0 dd 0h
 	int32hndl proc far
@@ -1766,18 +1770,23 @@ WK2:
 		mov eax, esp
 		mov dx, ss
 		
-		mov ebx, ds:prevesp0
-		mov cx, ds:prevss0
+		mov ebx, ds:prevesp
+		mov cx, ds:prevss
 		mov ss, cx
 		mov esp, ebx
 		
-		mov ds:prevss0, dx
+		mov ds:prevss, dx
+		mov ds:prevesp, eax
+
+		mov ebx, ds:prevesp0
+		mov eax, ds:tsssegment.esp0
+		mov ds:tsssegment.esp0, ebx
 		mov ds:prevesp0, eax
-		; bad style, we must save this params in other variables
-		mov ds:tsssegment.ss0, ss
-		mov eax, esp
-		add eax, 32
-		mov ds:tsssegment.esp0, eax
+		
+		mov bx, ds:prevss0
+		mov ax, ds:tsssegment.ss0
+		mov ds:tsssegment.ss0, bx
+		mov ds:prevss0, ax
 		
 		mov al, 20h
 		out 20h, al
