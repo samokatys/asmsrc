@@ -1022,16 +1022,14 @@ WK2:
 		mov ax, 0B8h
 		mov es, ax
 		
-		xor ebx, ebx
-		mov bx, [bp+12] ; pde number
-		shl ebx, 12 ; pde null entry address
-		mov edx, [bp+8] ; virtual address
-		and edx, 0FFC00000h ; save first 10 bit
-		shr edx, 20 ; pde number entry * 4 bytes = offset
-		add ebx, edx
-		mov eax, es:[ebx]
-		test eax, 1h ; P == 1
-		jnz already_allocate ; already had table for pde
+		mov ax, [bp+12] ; pde number
+		push ax 
+		mov eax, [bp+8] ; virtual address
+		push eax
+		call ptePhysicalAddr
+		
+		cmp eax, 0h ; no error
+		je already_allocate ; already had table for pte
 			mov ecx, ebx
 			call allocatePTE ; eax - error ebx - physical address of new pte
 			cmp eax, 1
@@ -1041,30 +1039,22 @@ WK2:
 			mov eax, ebx
 			mov ebx, ecx
 			mov es:[ebx], eax
-		already_allocate:
 			and eax, 0FFFFF000h
-		end_alloc_table:
+			
+			mov ebx, [bp+8] ; virtual address
+			and ebx, 3FF000h ; get pte
+			shr ebx, 10 ; pte number * 4 bytes = offset
+			add ebx, eax
+		already_allocate:
 		
-		mov ecx, eax
-		push 0B8h
-		call segmentBaseAddress
-		sub ecx, eax
-		; fill pte entry
-		mov ebx, [bp+8]
-		and ebx, 3FF000h ; get pte
-		shr ebx, 10 ; pte number * 4 bytes = offset
+		
+		push ebx
 		mov eax, [bp+4] ; physical address
 		or eax, 7h
-		add ebx, ecx
-		mov edx, es:[ebx] 
-		mov es:[ebx], eax
-		test edx, 21h ; P = 1, A = 1 - entry cached in TLB
-		jz end_clear_tlb
-			mov dx, 0C0h
-			mov ds, dx
-			mov ebx, [bp+8]
-			invlpg ds:[ebx]
-		end_clear_tlb:
+		push eax
+		mov eax, [bp+8]
+		push eax
+		call setPTEEntryValue
 		
 		no_error:
 			xor eax, eax
@@ -1082,6 +1072,50 @@ WK2:
 		
 		ret 10
 	setVirtualMemory endp
+	
+	; word pde number(0,1,2...)
+	; doubleword virtualAddr
+	; ret
+	; eax - error code(0 - no error; 1 - not present)
+	; ebx - pte physical address
+	ptePhysicalAddr proc near
+		push bp
+		mov bp, sp
+		push es
+		
+		mov ax, 0B8h
+		mov es, ax
+		
+		xor ebx, ebx
+		mov bx, [bp+8] ; pde number
+		shl ebx, 12 ; pde null entry address
+		mov eax, [bp+4] ; virtual address
+		and eax, 0FFC00000h ; save first 10 bit
+		shr eax, 20 ; pde number entry * 4 bytes = offset
+		add ebx, eax
+		mov eax, es:[ebx]
+		test eax, 1h ; P == 1
+		jz not_present ; pte present
+			and eax, 0FFFFF000h
+			mov ebx, eax
+			
+			mov eax, [bp+4] ; virtual address
+			and eax, 3FF000h ; get pte
+			shr eax, 10 ; pte number * 4 bytes = offset
+
+			add ebx, eax ; physical address pte entry
+			xor eax, eax
+			
+			jmp end_search_pte
+		not_present:
+			mov eax, 1h
+		end_search_pte:
+		
+		pop es
+		pop bp
+		
+		ret 6
+	ptePhysicalAddr endp
 	
 	; ret 
 	; eax - error code(0 - no error; 1 - not enough space for pte)
@@ -1123,7 +1157,6 @@ WK2:
 		and al,07fh
 		out 70h,al
 		sti
-
 		
 		no_pte_alloc_error:
 			xor eax, eax
@@ -1136,6 +1169,39 @@ WK2:
 		
 		ret
 	allocatePTE endp
+	
+	; double word - physical pte addr
+	; double word - pte value
+	; double word - virtual address(for clear cache)
+	setPTEEntryValue proc near
+		push bp
+		mov bp, sp
+		push eax
+		push ebx
+		push ecx
+		push es
+		
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov eax, [bp+8]
+		mov ebx, [bp+12]
+		mov ecx, es:[ebx]
+		mov es:[ebx], eax
+		test ecx, 21h ; P = 1, A = 1 - entry cached in TLB
+		jz end_clear_tlb
+			mov ebx, [bp+4]
+			invlpg es:[ebx]
+		end_clear_tlb:
+		
+		pop es
+		pop ecx
+		pop ebx
+		pop eax
+		pop bp
+		
+		ret 12
+	setPTEEntryValue endp
 	
 	lastvirtualaddr dd maxpdenumber dup(0)
 	; word - pde number(0,1,2...)
@@ -1309,18 +1375,6 @@ WK2:
 		
 		ret
 	allocatePhysicalMemory endp
-	
-	; word - pde number(0,1,2...)
-	; double word - virtual address
-	; double word - physical address
-	mapVirtualToPhysical proc near
-		push bp
-		mov bp, sp
-		
-		pop bp
-		
-		ret 10
-	mapVirtualToPhysical endp
 	
 	; word - segment num
 	; ret ax - ptr to descriptor
