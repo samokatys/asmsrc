@@ -255,8 +255,8 @@ WK2:
 	stackdesc segmentdescriptor { 0h, 0D000h, 0h, 1096h, 0h }
 	videotextdesc segmentdescriptor { 0, 8000h, 0Bh, 1192h, 0 }
 	; user mode segments
-	usermodecodedesc segmentdescriptor { usermodecodesgsize, 0, 0, 10FAh, 10h } ; base addr 10000000h
-	usermodedatadesc segmentdescriptor { usermodecodesgsize, 0, 0, 10F2h, 10h } ; base addr 10000000h
+	usermodecodedesc segmentdescriptor { 0FFFFh, 0, 0, 10FAh, 10h } ; base addr 10000000h 
+	usermodedatadesc segmentdescriptor { 0FFFFh, 0, 0, 10F2h, 10h } ; base addr 10000000h 
 	usermodestackdesc segmentdescriptor { 0h, 0D000h, 1h, 10F6h, 0h }
 	; simply have function that multiply two numbers and return result in ax
 	coreconformcodedesc segmentdescriptor { conformcodesgsize, 0, 0, 109Eh, 0 } 
@@ -708,7 +708,7 @@ WK2:
 			ifend:
 		
 			mov inthndls[bx].offset1, ax
-			shr eax, 8
+			shr eax, 16
 			mov inthndls[bx].offset2, ax
 			mov inthndls[bx].segselector, 8h
 			
@@ -780,7 +780,8 @@ WK2:
 		pop ax
 		or ax, 200h ; int on
 		push ax
-		push 63h
+		; push 63h
+		push 2bh
 		push offset foneStart
 		; stack registers
 		pushd 0h ; push eax
@@ -790,8 +791,11 @@ WK2:
 		pushd 0h ; push esi
 		pushd 0h ; push edi
 		pushd 0h ; push ebp
-		push 6Bh ; push ds
-		push 6Bh ; push es
+		;push 6Bh ; push ds
+		;push 6Bh ; push es
+		push 33h
+		push 33h
+		
 		
 		mov ds:prevss, ss
 		mov ds:prevesp, esp
