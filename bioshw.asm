@@ -845,7 +845,10 @@ WK2:
 		push ebx
 		push cx
 		push es
+		push ds
 		
+		mov ax, 10h
+		mov ds, ax
 		mov es, [bp+4]
 		
 		push [bp+4]
@@ -865,14 +868,17 @@ WK2:
 			mov bx, cx
 			dec bx
 			shl ebx, 12
-			
 			mov es:[ebx], eax
+			
+			shr ebx, 10 ; cx * 4 bytes
+			mov ds:lastvirtualaddr[bx], 3FF000h
 		loop pde_null_entry_init
 		
 		mov eax, ds:usedptenumber
 		inc eax
 		mov ds:usedptenumber, eax		
 		
+		pop ds
 		pop es
 		pop cx
 		pop ebx
@@ -1026,39 +1032,23 @@ WK2:
 		mov eax, es:[ebx]
 		test eax, 1h ; P == 1
 		jnz already_allocate ; already had table for pde
-		; allocate memory for table
-			mov ecx, ds:usedptenumber
-			add ecx, maxpdenumber
-			; check enough space for new pte
-			push 0B8h
-			call segmentSize
-			shr eax, 12 ; max number of tables
-			cmp ecx, eax
-			jae not_enough_pages ; error state
-			; fill pde entry
-			push es
-			call segmentBaseAddress
-			shl ecx, 12 ; offset of page segment; pointer to new table
-			or ecx, 7h ; p=1 r/w=1 u/s=1
-			add ecx, eax ; add base
+			mov ecx, ebx
+			call allocatePTE ; eax - error ebx - physical address of new pte
+			cmp eax, 1
+			je not_enough_pages
 			
-			mov es:[ebx], ecx
-			; add to use page counter
-			mov eax, ds:usedptenumber
-			mov ecx, eax
-			add ecx, maxpdenumber
-			shl ecx, 12
-			inc eax
-			mov ds:usedptenumber, eax
-			jmp end_alloc_table
+			or ebx, 7h ; p=1 r/w=1 u/s=1
+			mov eax, ebx
+			mov ebx, ecx
+			mov es:[ebx], eax
 		already_allocate:
-			mov ecx, eax
-			and ecx, 0FFFFF000h
-			push es
-			call segmentBaseAddress
-			sub ecx, eax
+			and eax, 0FFFFF000h
 		end_alloc_table:
 		
+		mov ecx, eax
+		push 0B8h
+		call segmentBaseAddress
+		sub ecx, eax
 		; fill pte entry
 		mov ebx, [bp+8]
 		and ebx, 3FF000h ; get pte
@@ -1092,6 +1082,245 @@ WK2:
 		
 		ret 10
 	setVirtualMemory endp
+	
+	; ret 
+	; eax - error code(0 - no error; 1 - not enough space for pte)
+	; ebx - pte physical address
+	allocatePTE proc near
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		cli
+		in al,70h
+		or al,80h
+		out 70h,al
+		
+		; allocate memory for table
+		mov ebx, ds:usedptenumber
+		add ebx, maxpdenumber
+		; check enough space for new pte
+		push 0B8h
+		call segmentSize
+		shr eax, 12 ; max number of tables
+		cmp ebx, eax
+		jae not_enough_space_for_pte ; error state
+			shl ebx, 12
+			
+			push 0B8h
+			call segmentBaseAddress
+			
+			add ebx, eax ; physical address of new pte
+			
+			; add to use page counter
+			mov eax, ds:usedptenumber
+			inc eax
+			mov ds:usedptenumber, eax
+		end_pte_allocate:
+		
+		in al,70h
+		and al,07fh
+		out 70h,al
+		sti
+
+		
+		no_pte_alloc_error:
+			xor eax, eax
+			jmp end_virtual_error_handling
+		not_enough_space_for_pte:
+			mov eax, 1h
+		end_virtual_error_handling:
+		
+		pop ds
+		
+		ret
+	allocatePTE endp
+	
+	lastvirtualaddr dd maxpdenumber dup(0)
+	; word - pde number(0,1,2...)
+	; word - page count
+	; ret 
+	; eax - error code(0 - no error; 1 - not enough virtual memory; 2 - not enough space for pte)
+	; ebx - virtual address
+	allocateVirtualMemory proc near
+		push bp
+		mov bp, sp
+		push ecx
+		push edx
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, 0B8h
+		mov es, ax
+		
+		xor ebx, ebx
+		mov bx, [bp+6] ; pde number
+		shl ebx, 2
+		mov eax, ds:lastvirtualaddr[ebx] ; last virtual address for given pde
+		shr eax, 12
+		mov edx, eax
+		
+		mov ebx, 0FFFFFFh
+		sub ebx, eax
+		xor eax, eax
+		mov ax, [bp+4] ; page count
+		cmp ebx, eax
+		jb no_virtual_pages
+			inc edx 
+			shl edx, 12 ; next virtual address
+			
+			xor ebx, ebx
+			mov bx, [bp+6] ; pde number
+			shl ebx, 12 ; pde null entry address
+			mov eax, edx ; virtual address
+			and eax, 0FFC00000h
+			shr eax, 20 ; pde number entry * 4 bytes = offset
+			add ebx, eax
+			
+			mov eax, es:[ebx] ; pde entry
+			test eax, 1h ; P == 1
+			jnz already_pte_allocate
+				; allocate memory for table
+				mov ecx, ds:usedptenumber
+				add ecx, maxpdenumber
+				; check enough space for new pte
+				push 0B8h
+				call segmentSize
+				shr eax, 12 ; max number of tables
+				cmp ecx, eax
+				jae not_enough_space_for_pte ; error state
+				; fill pde entry
+				push es
+				call segmentBaseAddress
+				shl ecx, 12 ; offset of page segment; pointer to new table
+				or ecx, 7h ; p=1 r/w=1 u/s=1
+				add ecx, eax ; add base
+				
+				mov es:[ebx], ecx
+				; add to use page counter
+				mov eax, ds:usedptenumber
+				mov ecx, eax
+				add ecx, maxpdenumber
+				shl ecx, 12
+				inc eax
+				mov ds:usedptenumber, eax
+				jmp end_pte_allocate				
+			already_pte_allocate:
+				mov ecx, eax
+				and ecx, 0FFFFF000h
+				push es
+				call segmentBaseAddress
+				sub ecx, eax
+			end_pte_allocate:
+			
+			; reserved pte entry
+			mov ebx, edx
+			and ebx, 3FF000h ; get pte
+			shr ebx, 10 ; pte number * 4 bytes = offset
+			add ebx, ecx
+			mov eax, es:[ebx] 
+			mov ecx, 0FFFFFFFEh
+			mov es:[ebx], ecx
+			test ecx, 21h ; P = 1, A = 1 - entry cached in TLB
+			jz end_clear_tlb
+				mov ax, 0C0h
+				mov ds, dx
+				mov ebx, [bp+8]
+				invlpg ds:[ebx]
+			end_clear_tlb:
+			
+			
+			xor ebx, ebx
+			mov bx, [bp+6] ; pde number
+			shl ebx, 2
+			mov ds:lastvirtualaddr[ebx], edx
+			mov ebx, edx
+			
+		no_virtual_error:
+			xor eax, eax
+			jmp end_virtual_error_handling
+		no_virtual_pages:
+			mov eax, 1h
+			jmp end_virtual_error_handling
+		not_enough_space_for_pte:
+			mov eax, 2h
+		end_virtual_error_handling:
+		
+		pop es
+		pop ds
+		pop edx
+		pop ecx
+		pop bp
+		
+		ret 4
+	allocateVirtualMemory endp
+	
+	physicalAddrPageStart = 400000h
+	maxPhysicalPages = 1C00h
+	physicalpagesused dw 0h
+	
+	; word - page number
+	; ret:
+	; eax - error code (0-no error, 1-not enough memory)
+	; ebx - physical address of 4KByte page
+	allocatePhysicalMemory proc near
+		push bp
+		mov bp, sp
+		push ds	
+		
+		mov ax, 10h
+		mov ds, ax
+		xor eax, eax
+		
+		cli
+		in al,70h
+		or al,80h
+		out 70h,al
+		
+		mov ax, ds:physicalpagesused
+		add ax, [bp+4] ; add number of pages
+		cmp ax, maxPhysicalPages
+		jae no_physical_pages
+			sub ax, [bp+4]
+			mov ebx, physicalAddrPageStart
+			shl eax, 12
+			add ebx, eax
+			
+			shr eax, 12
+			add ax, [bp+4]
+			mov ds:physicalpagesused, ax
+		no_physical_error:
+			xor eax, eax
+			jmp end_physical_error_handling
+		no_physical_pages:
+			mov eax, 1h
+		end_physical_error_handling:
+
+		in al,70h
+		and al,07fh
+		out 70h,al
+		sti
+
+		pop ds
+		pop bp
+		
+		ret
+	allocatePhysicalMemory endp
+	
+	; word - pde number(0,1,2...)
+	; double word - virtual address
+	; double word - physical address
+	mapVirtualToPhysical proc near
+		push bp
+		mov bp, sp
+		
+		pop bp
+		
+		ret 10
+	mapVirtualToPhysical endp
 	
 	; word - segment num
 	; ret ax - ptr to descriptor
