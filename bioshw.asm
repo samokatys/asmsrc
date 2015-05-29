@@ -531,6 +531,12 @@ WK2:
 		call printVirtualAddressStrings
 		call testResetVirtualAddress
 		
+		; word - pde number(0,1,2...)
+		; word - page count
+		push 0h
+		push 10h
+		call allocateVirtualMemory
+		
 		
 		;lea ebx, ptrtofonetss ; fone gdt
 		;jmp far ptr [ebx]
@@ -872,6 +878,7 @@ WK2:
 			
 			shr ebx, 10 ; cx * 4 bytes
 			mov ds:lastvirtualaddr[bx], 3FF000h
+			; mov ds:lastvirtualaddr[bx], 0FFFF000h ; next 10000000h
 		loop pde_null_entry_init
 		
 		mov eax, ds:usedptenumber
@@ -1013,11 +1020,7 @@ WK2:
 		push ebx
 		push ecx
 		push edx
-		push ds
 		push es
-		
-		mov ax, 10h
-		mov ds, ax
 		
 		mov ax, 0B8h
 		mov es, ax
@@ -1064,7 +1067,6 @@ WK2:
 		end_error_handling:
 		
 		pop es
-		pop ds
 		pop edx
 		pop ecx
 		pop ebx
@@ -1077,7 +1079,7 @@ WK2:
 	; doubleword virtualAddr
 	; ret
 	; eax - error code(0 - no error; 1 - not present)
-	; ebx - pte physical address
+	; ebx - eax=0 - pte physical address; eax=1 - pde offset from paging segment
 	ptePhysicalAddr proc near
 		push bp
 		mov bp, sp
@@ -1214,6 +1216,7 @@ WK2:
 		mov bp, sp
 		push ecx
 		push edx
+		push esi
 		push ds
 		push es
 		
@@ -1230,93 +1233,70 @@ WK2:
 		mov edx, eax
 		
 		mov ebx, 0FFFFFFh
-		sub ebx, eax
+		sub ebx, eax ; rest of pages
 		xor eax, eax
 		mov ax, [bp+4] ; page count
 		cmp ebx, eax
-		jb no_virtual_pages
-			inc edx 
-			shl edx, 12 ; next virtual address
-			
-			xor ebx, ebx
-			mov bx, [bp+6] ; pde number
-			shl ebx, 12 ; pde null entry address
-			mov eax, edx ; virtual address
-			and eax, 0FFC00000h
-			shr eax, 20 ; pde number entry * 4 bytes = offset
-			add ebx, eax
-			
-			mov eax, es:[ebx] ; pde entry
-			test eax, 1h ; P == 1
-			jnz already_pte_allocate
-				; allocate memory for table
-				mov ecx, ds:usedptenumber
-				add ecx, maxpdenumber
-				; check enough space for new pte
-				push 0B8h
-				call segmentSize
-				shr eax, 12 ; max number of tables
-				cmp ecx, eax
-				jae not_enough_space_for_pte ; error state
-				; fill pde entry
-				push es
-				call segmentBaseAddress
-				shl ecx, 12 ; offset of page segment; pointer to new table
-				or ecx, 7h ; p=1 r/w=1 u/s=1
-				add ecx, eax ; add base
+		jb no_virtual_pages_va
+			mov cx, ax
+			init_ptes_loop:
+				inc edx 
+				shl edx, 12 ; next virtual address
 				
-				mov es:[ebx], ecx
-				; add to use page counter
-				mov eax, ds:usedptenumber
-				mov ecx, eax
-				add ecx, maxpdenumber
-				shl ecx, 12
-				inc eax
-				mov ds:usedptenumber, eax
-				jmp end_pte_allocate				
-			already_pte_allocate:
-				mov ecx, eax
-				and ecx, 0FFFFF000h
-				push es
-				call segmentBaseAddress
-				sub ecx, eax
-			end_pte_allocate:
+				mov ax, [bp+6] ; pde number
+				push ax 
+				push edx
+				call ptePhysicalAddr
+				
+				cmp eax, 0h ; no error
+				je already_allocate_va ; already had table for pte
+					mov esi, ebx ; offset from paging segment for pde entry
+					call allocatePTE ; eax - error ebx - physical address of new pte
+					cmp eax, 1
+					je not_enough_space_for_pte_va
+					
+					or ebx, 7h ; p=1 r/w=1 u/s=1
+					mov es:[esi], ebx
+					and ebx, 0FFFFF000h
+					
+					mov eax, edx ; virtual address
+					and eax, 3FF000h ; get pte
+					shr eax, 10 ; pte number * 4 bytes = offset
+					add ebx, eax
+				already_allocate_va:
+				
+				push ebx
+				pushd 0FFFFFFFEh
+				push edx
+				call setPTEEntryValue
+				
+				shr edx, 12
+			loop init_ptes_loop
 			
-			; reserved pte entry
-			mov ebx, edx
-			and ebx, 3FF000h ; get pte
-			shr ebx, 10 ; pte number * 4 bytes = offset
-			add ebx, ecx
-			mov eax, es:[ebx] 
-			mov ecx, 0FFFFFFFEh
-			mov es:[ebx], ecx
-			test ecx, 21h ; P = 1, A = 1 - entry cached in TLB
-			jz end_clear_tlb
-				mov ax, 0C0h
-				mov ds, dx
-				mov ebx, [bp+8]
-				invlpg ds:[ebx]
-			end_clear_tlb:
-			
-			
+			shl edx, 12
 			xor ebx, ebx
 			mov bx, [bp+6] ; pde number
 			shl ebx, 2
 			mov ds:lastvirtualaddr[ebx], edx
+			xor eax, eax
+			mov ax, [bp+4]
+			shr eax, 12
+			sub edx, eax
 			mov ebx, edx
 			
-		no_virtual_error:
+		no_virtual_error_va:
 			xor eax, eax
-			jmp end_virtual_error_handling
-		no_virtual_pages:
+			jmp end_virtual_error_handling_va
+		no_virtual_pages_va:
 			mov eax, 1h
-			jmp end_virtual_error_handling
-		not_enough_space_for_pte:
+			jmp end_virtual_error_handling_va
+		not_enough_space_for_pte_va:
 			mov eax, 2h
-		end_virtual_error_handling:
+		end_virtual_error_handling_va:
 		
 		pop es
 		pop ds
+		pop esi
 		pop edx
 		pop ecx
 		pop bp
