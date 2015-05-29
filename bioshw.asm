@@ -52,6 +52,7 @@ main:
 	mov ss, ax
 	mov sp, 0FFFFh
 	
+	
 	mov diskid, dl
 	mov ah, 42h
 	lea si, readdap
@@ -475,11 +476,12 @@ WK2:
 		mov ax, 18h
 		mov ss, ax	
 		
-		call prepareUserModeSegment
-		call prepareFoneSegment
 		call prepareVirtualAddressStrings
 		
 		call setPaging
+		
+		call prepareUserModeSegment
+		call prepareFoneSegment
 		
 		call prepareTSS
 		ltr taskreg
@@ -488,16 +490,7 @@ WK2:
 		nexttaskstep = $
 
 		call prepareFoneTSS
-		; set virtual address for user mode segments
-		push 0h
-		pushd 10000000h
-		pushd 400000h
-		call setVirtualMemory		
 		
-		push 1h
-		pushd 10000000h
-		pushd 410000h
-		call setVirtualMemory
 		
 		in al,70h
 		and al,07fh
@@ -530,13 +523,6 @@ WK2:
 		
 		call printVirtualAddressStrings
 		call testResetVirtualAddress
-		
-		; word - pde number(0,1,2...)
-		; word - page count
-		push 0h
-		push 10h
-		call allocateVirtualMemory
-		
 		
 		;lea ebx, ptrtofonetss ; fone gdt
 		;jmp far ptr [ebx]
@@ -614,13 +600,10 @@ WK2:
 		mov eax, ds:mulcallptr
 		mov es:[bx+mulconformptr], eax
 		
-		mov ax, 0C0h
-		mov ds, ax
-		
-		mov esi, ebx
-		mov edi, 400000h 
-		mov cx, usermodecodesgsize
-		rep movsb es:[edi], ds:[esi]
+		push 0h
+		push usermodecodesgsize
+		push ebx
+		call setUserModeCode
 		
 		pop es
 		pop ds
@@ -662,13 +645,10 @@ WK2:
 		mov eax, ds:itoahcallptr
 		mov es:[bx+foneitoahconformptr], eax
 		
-		mov ax, 0C0h
-		mov ds, ax
-		
-		mov esi, ebx
-		mov edi, 410000h 
-		mov cx, fonecodesgsize
-		rep movsb es:[edi], ds:[esi]
+		push 1h
+		push fonecodesgsize
+		push ebx
+		call setUserModeCode		
 
 		pop es
 		pop ds
@@ -680,6 +660,70 @@ WK2:
 		
 		ret
 	prepareFoneSegment endp
+	
+	; word - context number
+	; word - size bytes
+	; double word - code address physical
+	; ret eax (0 - no error, 1 - not enough memory)
+	setUserModeCode proc near
+		push bp
+		mov bp, sp
+		push eax
+		push ebx
+		push ecx
+		push esi
+		push edi
+		push es
+		push ds
+		
+		mov ax, 0C0h
+		mov es, ax
+		mov ds, ax
+		
+		xor eax, eax
+		xor ecx, ecx
+		mov cx, [bp+8] ; size
+		mov ax, cx
+		shr ax, 12 ; pages count
+		and cx, 0FFFh
+		jz not_increment
+			inc ax ; rest > 0
+		not_increment:
+		
+		push [bp+10] ; context number
+		push ax
+		call allocateVirtualMemory
+		
+		cmp eax, 0h
+		jne end_of_copy_code
+			mov eax, cr3
+			
+			xor esi, esi
+			mov si, [bp+10]
+			shl esi, 12
+			add esi, 200000h
+			mov cr3, esi
+		
+			mov esi, [bp+4]
+			mov edi, ebx
+			mov cx, [bp+8] ; size
+			rep movsb es:[edi], ds:[esi]
+			
+			mov cr3, eax
+			xor eax, eax
+		end_of_copy_code:
+		
+		pop ds
+		pop es
+		pop edi
+		pop esi
+		pop ecx
+		pop ebx
+		pop eax
+		pop bp
+		
+		ret 8
+	setUserModeCode endp
 	
 	prepareIDTR proc
 		; compute idtr start 
@@ -877,8 +921,8 @@ WK2:
 			mov es:[ebx], eax
 			
 			shr ebx, 10 ; cx * 4 bytes
-			mov ds:lastvirtualaddr[bx], 3FF000h
-			; mov ds:lastvirtualaddr[bx], 0FFFF000h ; next 10000000h
+			; mov ds:lastvirtualaddr[bx], 3FF000h
+			mov ds:lastvirtualaddr[bx], 0FFFF000h ; next 10000000h
 		loop pde_null_entry_init
 		
 		mov eax, ds:usedptenumber
@@ -1321,39 +1365,27 @@ WK2:
 		mov ds, ax
 		xor eax, eax
 		
-		cli
-		in al,70h
-		or al,80h
-		out 70h,al
-		
 		mov ax, ds:physicalpagesused
 		add ax, [bp+4] ; add number of pages
 		cmp ax, maxPhysicalPages
 		jae no_physical_pages
+			mov ds:physicalpagesused, ax
+			
 			sub ax, [bp+4]
 			mov ebx, physicalAddrPageStart
 			shl eax, 12
 			add ebx, eax
 			
-			shr eax, 12
-			add ax, [bp+4]
-			mov ds:physicalpagesused, ax
-		no_physical_error:
 			xor eax, eax
 			jmp end_physical_error_handling
 		no_physical_pages:
 			mov eax, 1h
 		end_physical_error_handling:
 
-		in al,70h
-		and al,07fh
-		out 70h,al
-		sti
-
 		pop ds
 		pop bp
 		
-		ret
+		ret 2
 	allocatePhysicalMemory endp
 	
 	; word - segment num
@@ -1932,8 +1964,109 @@ WK2:
 		iret
 	int13hndl endp
 	
+	pagefaultstr db 'Page fault error 0x0000'
+	pagefaultstrsize = $ - pagefaultstr
+	printPageFault proc near
+		push bp
+		mov bp, sp
+		push ds
+		push eax
+		push ebx
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		xor eax, eax
+		mov ax, [bp+4] ; error code
+		lea bx, ds:pagefaultstr
+		add bx, pagefaultstrsize - 4h ; shift '0x'
+		
+		push eax
+		push bx
+		push 4h
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]
+		
+		push 4fh - pagefaultstrsize
+		push 0Eh
+		push pagefaultstrsize
+		lea ebx, ds:pagefaultstr
+		push ebx
+		call printProtectedVGA
+		
+		pop ebx
+		pop eax
+		pop ds
+		pop bp
+		
+		ret 2
+	printPageFault endp
+	
+	
 	int14hndl proc far
-		STUB_INT_HNDL 0Eh
+		; STUB_INT_HNDL 0Eh
+		push bp
+		mov bp, sp
+		push eax
+		push ebx
+		push esi
+		push es
+		
+		mov eax, [bp+2] ; error code
+		and eax, 01h
+		jnz not_translation_error
+			; error with translation
+			mov eax, cr3
+			and eax, 0F000h
+			shr eax, 12 ; pde number
+			push ax
+			mov eax, cr2 ; virtual address
+			push eax
+			call ptePhysicalAddr
+			
+			cmp eax, 0h
+			jne pte_not_present ; memory is not allocated
+				mov ax, 0C0h
+				mov es, ax
+				
+				mov eax, es:[ebx]
+				mov esi, ebx
+				test eax, 0FFFFFFFEh
+				jz not_reserved_value
+					push 1h 
+					call allocatePhysicalMemory
+					
+					cmp eax, 0h
+					jne not_enough_physical_memory
+						or ebx, 7h
+						mov es:[esi], ebx
+						mov eax, 0
+						jmp end_repair
+					not_enough_physical_memory:
+						mov eax, 4h
+						jmp end_repair
+				not_reserved_value:
+					mov eax, 3h
+					jmp end_repair
+			pte_not_present:
+				mov eax, 2h
+				jmp end_repair
+		not_translation_error:
+			mov eax, 1h
+			jmp end_repair
+		end_repair:
+		
+		push ax
+		call printPageFault
+		
+		pop es
+		pop esi
+		pop ebx
+		pop eax
+		pop bp
+		
+		add sp, 2
+		
 		iret
 	int14hndl endp
 	
