@@ -288,6 +288,8 @@ WK2:
 	; paging data segment
 	pagingdatadesc segmentdescriptor { 0FFh, 0h, 20h, 9092h, 0 }  ; G = 1 1MByte size
 	bigdatadesc segmentdescriptor { 0FFFFh, 0h, 0h, 9F92h, 0 } ; G = 1 4GByte size
+	; allocate memory
+	memallocatecallgate gatedescriptor { offset allocateUserMode, 08h, 0E401h, 0h } 
 	gdtsize = $ - nulldesc
 	
 	; IDT
@@ -595,6 +597,7 @@ WK2:
 		
 		mov es:[bx+callgateprintmultiply], 4B0000h
 		mov es:[bx+callgateprintcounter], 5B0000h 
+		mov es:[bx+callgatememallocate], 0C80000h 
 		mov eax, ds:itoahcallptr
 		mov es:[bx+itoahconformptr], eax
 		mov eax, ds:mulcallptr
@@ -1640,6 +1643,27 @@ WK2:
 		ret 2
 	printPicStr endp
 	
+	; word - pages count
+	; ret 
+	; eax - error code(0 - no error; 1 - not enough virtual memory; 2 - not enough space for pte)
+	; ebx - offset from 10000000h
+	allocateUserMode proc far
+		push bp
+		mov bp, sp
+		
+		mov eax, cr3
+		and ax, 0F000h
+		shr ax, 12
+		push ax
+		push [bp+6]
+		call allocateVirtualMemory
+		
+		sub ebx, 10000000h ; we must take segment base address
+		
+		pop bp
+		retf 2
+	allocateUserMode endp
+	
 	printMultiplyResultStr proc far
 		push ebp
 		mov bp, sp
@@ -2485,6 +2509,9 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 	itoahconformptr dd 0h
 	callgateprintmultiply dd 0h
 	callgateprintcounter dd 0h
+	callgatememallocate dd 0h
+	
+	newpageptr dd 0h
 	
 	; user mode code segment
 	workInUserMode proc far
@@ -2501,6 +2528,15 @@ usermodecodesg SEGMENT PARA USE16 'CODE'
 		push ax
 		lea ebx, ds:callgateprintmultiply
 		call far ptr [ebx]
+		
+		; output result
+		push 1h
+		lea ebx, ds:callgatememallocate
+		call far ptr [ebx]
+		
+		mov ds:newpageptr, ebx
+		mov ax, 0ACACh
+		mov ds:[ebx], ax
 		
 		infinity_loop:
 			mov ecx, 02FFFFh
