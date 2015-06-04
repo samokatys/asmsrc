@@ -526,19 +526,123 @@ WK2:
 		call printVirtualAddressStrings
 		call testResetVirtualAddress
 		
-		;lea ebx, ptrtofonetss ; fone gdt
-		;jmp far ptr [ebx]
+		
+		call searchMPTable
 		
 		push 3Bh ; stack
 		push 0FFFFh
 		push 2Bh ; user mode code 
 		push offset workInUserMode
-		;push 73h ; stack
-		;push 0FFFFh
-		;push 63h ; user mode code 
-		;push 0h
+
 		retf
 	workInProtectedMode endp
+	
+	floatingptrsignature dd 5F504D5Fh
+	mptablesignature dd 504D4350h
+	
+	mptableptr dd 0h
+	
+	searchMPTable proc near
+		push eax
+		push ebx
+		push ds
+		push es
+		
+		mov ax, 0C0h
+		mov ds, ax
+		mov ax, 10h
+		mov es, ax
+		
+		xor eax, eax
+		xor ebx, ebx
+		
+		mov bx, 040Eh
+		mov ax, ds:[bx]
+		
+		cmp ax, 0h
+		jne ebda_exist
+			mov eax, 9FC00h ; physical memory > 512 KB
+			jmp end_init_address
+		ebda_exist:
+			shl eax, 4
+		end_init_address:
+		
+		push eax
+		add eax, 400h
+		push eax
+		mov eax, es:floatingptrsignature
+		push eax
+		call searchDWordInMemory
+		
+		cmp eax, 0h
+		je float_ptr_found
+			; search in bios memory
+			pushd 0F0000h
+			pushd 100000h
+			pushd es:floatingptrsignature
+			call searchDWordInMemory
+			
+			cmp eax, 0h
+			je float_ptr_found
+				; hndl this error state
+				jmp end_of_search
+		float_ptr_found:
+			mov eax, ds:[ebx+4] ; ptr to floating ptr
+			mov ebx, eax
+			mov eax, ds:[ebx] ; signature of table
+			cmp eax, es:mptablesignature
+			jne bad_mp_table_signature
+				mov es:mptableptr, ebx
+				jmp end_of_search
+			bad_mp_table_signature:
+				; hndl this error state
+		end_of_search:
+	
+		pop es
+		pop ds
+		pop ebx
+		pop eax
+		ret 
+	searchMPTable endp
+	
+	; double word - start address in ds
+	; double word - end address in ds
+	; double word - signature
+	; eax - error code 0 - no error, 1 - not found
+	; ebx - address
+	searchDWordInMemory proc near
+		push bp
+		mov bp, sp
+		push ecx
+		push esi
+		
+		mov eax, [bp+4] ; signature
+		mov ecx, [bp+8] ; end
+		mov ebx, [bp+12] ; start
+		
+		sub ecx, ebx ; number of bytes
+		mov esi, ebx
+		search_dword_loop:
+			mov ebx, ds:[esi]
+			cmp ebx, eax
+			je dword_found
+				dec ecx
+				inc esi
+				cmp ecx, 0h
+				ja search_dword_loop ; check next address
+					mov eax, 1h
+					jmp end_search_dword_loop
+			dword_found:
+				xor eax, eax
+				mov ebx, esi
+		end_search_dword_loop:
+		
+		pop ecx
+		pop esi
+		pop bp
+		ret 12
+	searchDWordInMemory endp
+	
 	
 	prepareGDTR proc
 		; compute gdtr start 
@@ -1237,8 +1341,9 @@ WK2:
 		mov ebx, [bp+12]
 		mov ecx, es:[ebx]
 		mov es:[ebx], eax
-		test ecx, 21h ; P = 1, A = 1 - entry cached in TLB
-		jz end_clear_tlb
+		and ecx, 21h ; P = 1, A = 1 - entry cached in TLB
+		cmp ecx, 21h 
+		jne end_clear_tlb
 			mov ebx, [bp+4]
 			invlpg es:[ebx]
 		end_clear_tlb:
@@ -1325,9 +1430,11 @@ WK2:
 			mov bx, [bp+6] ; pde number
 			shl ebx, 2
 			mov ds:lastvirtualaddr[ebx], edx
+			
 			xor eax, eax
 			mov ax, [bp+4]
-			shr eax, 12
+			dec ax
+			shl eax, 12
 			sub edx, eax
 			mov ebx, edx
 			
@@ -2055,8 +2162,8 @@ WK2:
 				
 				mov eax, es:[ebx]
 				mov esi, ebx
-				test eax, 0FFFFFFFEh
-				jz not_reserved_value
+				cmp eax, 0FFFFFFFEh
+				jne not_reserved_value
 					push 1h 
 					call allocatePhysicalMemory
 					
@@ -2604,7 +2711,7 @@ fonecodesg SEGMENT PARA USE16 'CODE'
 	scancodehandlers dw 256 dup(offset scanCodeStub)
 	
 	foneStart proc far
-		mov ax, 6Bh
+		mov ax, 33h
 		mov ds, ax
 		
 		call initKeyboardHandlers
