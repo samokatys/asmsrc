@@ -528,6 +528,7 @@ WK2:
 		
 		
 		call searchMPTable
+		call startNewProcessor
 		
 		push 3Bh ; stack
 		push 0FFFFh
@@ -642,6 +643,50 @@ WK2:
 		pop bp
 		ret 12
 	searchDWordInMemory endp
+	
+	startNewProcessor proc near
+		push es
+		; set shutdown type
+		mov al, 0Fh
+		out 70h, al
+		mov al, 0Ah
+		out 71h, al
+		
+		; mov al, 0Fh
+		; out 70h, al
+		; in al, 71h
+		
+		; set init address
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov bx, 467h
+		mov ax, 7c00h
+		add ax, offset procInitProcedure
+		mov es:[bx], ax
+		
+		; send init
+		mov ebx, 40004000h
+		push 0h
+		push ebx
+		pushd 0FEE00000h
+		call setVirtualMemory
+		
+		cli
+		mov eax, 4600h
+		mov es:[ebx+300h], eax
+		mov eax, 1000000h
+		mov es:[ebx+310h], eax
+		sti
+		
+		pop es
+		
+		ret 
+	startNewProcessor endp
+	
+	procInitProcedure proc near
+		jmp $
+	procInitProcedure endp
 	
 	
 	prepareGDTR proc
