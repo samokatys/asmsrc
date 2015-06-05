@@ -526,8 +526,8 @@ WK2:
 		call printVirtualAddressStrings
 		call testResetVirtualAddress
 		
-		
 		call searchMPTable
+		call makeInitProcPlace
 		call startNewProcessor
 		
 		push 3Bh ; stack
@@ -627,8 +627,8 @@ WK2:
 			mov ebx, ds:[esi]
 			cmp ebx, eax
 			je dword_found
-				dec ecx
-				inc esi
+				sub ecx, 4
+				add esi, 4
 				cmp ecx, 0h
 				ja search_dword_loop ; check next address
 					mov eax, 1h
@@ -645,25 +645,24 @@ WK2:
 	searchDWordInMemory endp
 	
 	startNewProcessor proc near
+		push ds
 		push es
+		
 		; set shutdown type
 		mov al, 0Fh
 		out 70h, al
 		mov al, 0Ah
 		out 71h, al
 		
-		; mov al, 0Fh
-		; out 70h, al
-		; in al, 71h
-		
 		; set init address
 		mov ax, 0C0h
 		mov es, ax
+		mov ax, 10h
+		mov ds, ax
 		
 		mov bx, 467h
-		mov ax, 7c00h
-		add ax, offset procInitProcedure
-		mov es:[bx], ax
+		mov eax, ds:initaddress
+		mov es:[bx], eax
 		
 		; send init
 		mov ebx, 40004000h
@@ -672,21 +671,102 @@ WK2:
 		pushd 0FEE00000h
 		call setVirtualMemory
 		
-		cli
-		mov eax, 4600h
-		mov es:[ebx+300h], eax
-		mov eax, 1000000h
+		; init ipi
+		mov eax, 0000000h
 		mov es:[ebx+310h], eax
-		sti
+		mov eax, 0CC500h
+		mov es:[ebx+300h], eax
+		
+		mov cx, 0FFFFh
+		sleep_init_ipi:
+		loop sleep_init_ipi
+		
+		mov eax, es:[ebx+30h] ; local apic version
+		and ax, 0FFh
+		cmp ax, 10h ; 0Xh - 82489DX discrete APIC
+		jb end_startup_ipi
+			; startup ipi
+			mov dx, 2h
+			startup_ipi:
+				dec dx
+				
+				mov eax, 0000000h
+				mov es:[ebx+310h], eax
+				mov ecx, ds:initaddress
+				shr ecx, 12
+				and ecx, 0FFh
+				mov eax, 0C4600h
+				or eax, ecx
+				mov es:[ebx+300h], eax
+				
+				mov cx, 0FFFFh
+				sleep_startup_ipi:
+				loop sleep_startup_ipi
+				
+			cmp dx, 0h
+			jne startup_ipi
+		end_startup_ipi:
+		
 		
 		pop es
+		pop ds
 		
 		ret 
 	startNewProcessor endp
 	
-	procInitProcedure proc near
+	initaddress dd 088000h
+	callbackptr dd 0h
+	newprocstr db 'Hello, MP World!'
+	newprocstrsize = $ - newprocstr
+	
+	printNewProcString proc near
+		push 0h
+		push 14h
+		push newprocstrsize
+		lea ebx, newprocstr
+		pushd ebx
+		call printProtectedVGA
+		
 		jmp $
+	printNewProcString endp
+	
+	tmp db 'MARK'
+	procInitProcedure proc near
+		mov ax, 7c00h
+		mov ds, ax
+		mov es, ax
+		mov ax, 8900h
+		mov ss, ax
+		mov sp, 0FFFFh
+
+		lea ebx, ds:callbackptr
+		call far ptr [ebx]
 	procInitProcedure endp
+	procInitProcedureSize = $ - procInitProcedure
+	
+	makeInitProcPlace proc near
+		push es
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov ebx, 07c00000h
+		add ebx, offset printNewProcString
+		mov ds:callbackptr, ebx
+		
+		mov esi, offset procInitProcedure
+		mov edi, ds:initaddress
+		mov cx, procInitProcedureSize
+		rep movsb es:[edi], ds:[esi]
+		
+		pop ds
+		pop es
+		
+		ret
+	makeInitProcPlace endp
 	
 	
 	prepareGDTR proc
