@@ -627,8 +627,8 @@ WK2:
 			mov ebx, ds:[esi]
 			cmp ebx, eax
 			je dword_found
-				sub ecx, 4
-				add esi, 4
+				sub ecx, 16
+				add esi, 16
 				cmp ecx, 0h
 				ja search_dword_loop ; check next address
 					mov eax, 1h
@@ -725,14 +725,14 @@ WK2:
 		push newprocstrsize
 		lea ebx, newprocstr
 		pushd ebx
-		call printProtectedVGA
+		call printRealModeVGA
 		
 		jmp $
 	printNewProcString endp
 	
 	tmp db 'MARK'
 	procInitProcedure proc near
-		mov ax, 7c00h
+		mov ax, 7c0h
 		mov ds, ax
 		mov es, ax
 		mov ax, 8900h
@@ -1800,6 +1800,52 @@ WK2:
 		
 		ret 10
 	printProtectedVGA endp
+	
+	printRealModeVGA proc near
+		push ebp
+		xor ebp, ebp
+		mov bp, sp
+		push es
+		push ax
+		push bx
+		push cx
+		push dx
+		push esi
+		
+		xor esi, esi
+		
+		mov ax, [bp+12] ; row
+		mov bx, 50h
+		mul bx
+		mov bx, [bp+14]
+		add bx, ax ; start pointer to vga buffer
+		shl bx, 1
+		
+		mov ax, 0B800h
+		mov es, ax
+		mov cx, [bp+10]
+		mov dx, cx
+		mov ebp, [bp+6] ;pointer to string
+		output:
+			mov ah, 07Ch ; background and character color
+			mov si, dx
+			sub si, cx
+			mov al, ds:[ebp+esi]
+			
+			shl si, 1
+			mov es:[bx+si], ax ; esi not need
+		loop output
+		
+		pop esi
+		pop dx
+		pop cx
+		pop bx
+		pop ax
+		pop es
+		pop ebp
+		
+		ret 10
+	printRealModeVGA endp
 	
 	printIntStr proc near
 		push ebp
