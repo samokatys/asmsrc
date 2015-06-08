@@ -677,6 +677,10 @@ WK2:
 		jnz check_ready_to_send_ipi
 		
 		cli
+		in al,70h
+		or al,80h
+		out 70h,al
+
 		
 		; init ipi
 		mov eax, 0000000h
@@ -684,6 +688,9 @@ WK2:
 		mov eax, 0CC500h
 		mov es:[ebx+300h], eax
 		
+		in al,70h
+		and al,07fh
+		out 70h,al
 		sti
 		
 		mov cx, 0FFFFh
@@ -705,6 +712,9 @@ WK2:
 				jnz check_ready_to_send_sipi
 				
 				cli 
+				in al,70h
+				or al,80h
+				out 70h,al
 				
 				mov eax, 0000000h
 				mov es:[ebx+310h], eax
@@ -715,6 +725,9 @@ WK2:
 				or eax, ecx
 				mov es:[ebx+300h], eax
 				
+				in al,70h
+				and al,07fh
+				out 70h,al
 				sti
 				
 				mov cx, 0FFFFh
