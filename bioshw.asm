@@ -671,11 +671,20 @@ WK2:
 		pushd 0FEE00000h
 		call setVirtualMemory
 		
+		check_ready_to_send_ipi:
+			mov eax, es:[ebx+300h]
+			test eax, 1000h
+		jnz check_ready_to_send_ipi
+		
+		cli
+		
 		; init ipi
 		mov eax, 0000000h
 		mov es:[ebx+310h], eax
 		mov eax, 0CC500h
 		mov es:[ebx+300h], eax
+		
+		sti
 		
 		mov cx, 0FFFFh
 		sleep_init_ipi:
@@ -690,6 +699,13 @@ WK2:
 			startup_ipi:
 				dec dx
 				
+				check_ready_to_send_sipi:
+					mov eax, es:[ebx+300h]
+					test eax, 1000h
+				jnz check_ready_to_send_sipi
+				
+				cli 
+				
 				mov eax, 0000000h
 				mov es:[ebx+310h], eax
 				mov ecx, ds:initaddress
@@ -698,6 +714,8 @@ WK2:
 				mov eax, 0C4600h
 				or eax, ecx
 				mov es:[ebx+300h], eax
+				
+				sti
 				
 				mov cx, 0FFFFh
 				sleep_startup_ipi:
