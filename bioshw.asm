@@ -530,6 +530,8 @@ WK2:
 		call makeInitProcPlace
 		call startNewProcessor
 		
+		call disablePIC
+		
 		push 3Bh ; stack
 		push 0FFFFh
 		push 2Bh ; user mode code 
@@ -1781,6 +1783,30 @@ WK2:
 		
 		ret
 	reinitPIC endp
+	
+	disablePIC proc near
+		push ax
+		
+		mov al, 0FFh
+		out 21h, al
+		out 0A1h, al
+		
+		pop ax
+		
+		ret
+	disablePIC endp
+	
+	enablePIC proc near
+		push ax
+		
+		mov al, 0h
+		out 21h, al
+		out 0A1h, al
+		
+		pop ax
+		
+		ret
+	enablePIC endp
 	
 	; stack:
 	; no checks out of buff, out vga buff
