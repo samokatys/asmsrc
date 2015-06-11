@@ -458,8 +458,8 @@ WK2:
 		out 70h,al
 		in al, 71h
 		
-		call reinitPIC
-
+		call disablePIC
+		
 		lgdt gdtr
 		lidt idtr
 		
@@ -482,6 +482,17 @@ WK2:
 		
 		call setPaging
 		
+		mov ebx, 0FEE00000h
+		push 0h
+		push ebx
+		push ebx
+		call setVirtualMemory
+		
+		push 1h
+		push ebx
+		push ebx
+		call setVirtualMemory
+		
 		call prepareUserModeSegment
 		call prepareFoneSegment
 		
@@ -493,13 +504,14 @@ WK2:
 
 		call prepareFoneTSS
 		
-		
 		in al,70h
 		and al,07fh
 		out 70h,al
 		in al, 71h
 		
 		sti
+		
+		call initAPIC
 		
 		push 14h
 		push 18h
@@ -529,8 +541,6 @@ WK2:
 		call searchMPTable
 		call makeInitProcPlace
 		call startNewProcessor
-		
-		call disablePIC
 		
 		push 3Bh ; stack
 		push 0FFFFh
@@ -667,32 +677,20 @@ WK2:
 		mov es:[bx], eax
 		
 		; send init
-		mov ebx, 40004000h
-		push 0h
-		push ebx
-		pushd 0FEE00000h
-		call setVirtualMemory
-		
+		mov ebx, 0FEE00000h
 		check_ready_to_send_ipi:
 			mov eax, es:[ebx+300h]
 			test eax, 1000h
 		jnz check_ready_to_send_ipi
 		
 		cli
-		in al,70h
-		or al,80h
-		out 70h,al
 
-		
 		; init ipi
 		mov eax, 0000000h
 		mov es:[ebx+310h], eax
 		mov eax, 0CC500h
 		mov es:[ebx+300h], eax
 		
-		in al,70h
-		and al,07fh
-		out 70h,al
 		sti
 		
 		mov cx, 0FFFFh
@@ -1808,6 +1806,68 @@ WK2:
 		ret
 	enablePIC endp
 	
+	apicioregsel dd 0FEC00000h
+	APIC_WIN_OFFSET = 10h
+	START_ADDRESS_OI_TBL = 10h
+	END_ADDRESS_OI_TBL = 40h
+	IO_NUMBER = (END_ADDRESS_OI_TBL - START_ADDRESS_OI_TBL - 2) / 2
+	initAPIC proc near
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov ebx, ds:apicioregsel
+		
+		push 0h
+		push ebx
+		push ebx
+		call setVirtualMemory
+				
+		cli
+		mov eax, 21h
+		mov esi, START_ADDRESS_OI_TBL + 2
+		mov cx, IO_NUMBER - 1
+		init_redirect_tbl_reg:
+			mov es:[ebx], esi
+			mov edx, es:[ebx+APIC_WIN_OFFSET]
+			mov es:[ebx+APIC_WIN_OFFSET], eax
+			
+			inc esi
+			mov es:[ebx], esi
+			mov edx, es:[ebx+APIC_WIN_OFFSET]
+			xor edx, edx
+			mov es:[ebx+APIC_WIN_OFFSET], edx
+			
+			inc eax
+			inc esi
+			cmp esi, 14h
+			jne end_init_timer
+				mov eax, 20h
+				mov es:[ebx], esi
+				mov edx, es:[ebx+APIC_WIN_OFFSET]
+				mov es:[ebx+APIC_WIN_OFFSET], eax
+				
+				inc esi
+				mov es:[ebx], esi
+				mov edx, es:[ebx+APIC_WIN_OFFSET]
+				xor edx, edx
+				mov es:[ebx+APIC_WIN_OFFSET], edx
+				
+				mov eax, 23h
+				inc esi
+			end_init_timer:
+		loop init_redirect_tbl_reg
+		sti
+		pop es
+		pop ds
+		
+		ret
+	initAPIC endp
+	
 	; stack:
 	; no checks out of buff, out vga buff
 	; 0 <= col < 80 0 <= row < 25(bochsrc default)
@@ -2463,14 +2523,24 @@ WK2:
 	
 	; macro stub for master pic
 	STUB_MASTER_PIC_HNDL macro number
-		push ax
+		push eax
+		push ebx
+		push es
 		
 		push number
 		call printPicStr
-		mov al, 20h
-		out 20h, al
+		; mov al, 20h
+		; out 20h, al
+		mov ax, 0C0h
+		mov es, ax
+		mov ebx, 0FEE00000h
 		
-		pop ax
+		xor eax, eax
+		mov es:[ebx+0B0h], eax
+		
+		pop es
+		pop ebx
+		pop eax
 	endm
 	
 	ptrtomaintss dd 500000h
@@ -2559,8 +2629,14 @@ WK2:
 		end_pde_select:
 		mov cr3, eax
 		
-		mov al, 20h
-		out 20h, al
+		;mov al, 20h
+		;out 20h, al
+		
+		mov ax, 0C0h
+		mov es, ax
+		xor eax, eax
+		mov ebx, 0FEE00000h
+		mov es:[ebx+0B0h], eax
 		
 		pop es
 		pop ds
@@ -2585,11 +2661,12 @@ WK2:
 	
 	; keyboard
 	int33hndl proc far
-		push ax
-		push bx
+		push eax
+		push ebx
 		push cx
 		push si
 		push ds
+		push es
 		
 		mov ax, 10h
 		mov ds, ax
@@ -2629,14 +2706,20 @@ WK2:
 			loopnz read_kbd_buff
 		output_empty:
 		
-		mov al, 20h
-		out 20h, al
+		;mov al, 20h
+		;out 20h, al
+		mov ax, 0C0h
+		mov es, ax
+		xor eax, eax
+		mov ebx, 0FEE00000h
+		mov es:[ebx+0B0h], eax
 		
+		pop es
 		pop ds
 		pop si
 		pop cx
-		pop bx
-		pop ax		
+		pop ebx
+		pop eax		
 		iret
 	int33hndl endp
 	
@@ -2705,15 +2788,24 @@ WK2:
 	; macro stub for slave pic
 	STUB_SLAVE_PIC_HNDL macro number
 		;LOAD_ALL_REGISTERS_IN_STACK
-		push ax
+		push eax
+		push ebx
+		push es
 		
 		push number
 		call printPicStr
-		mov al, 20h
-		out 0A0h, al
-		out 20h, al
+		;mov al, 20h
+		;out 0A0h, al
+		;out 20h, al
+		mov ax, 0C0h
+		mov es, ax
+		xor eax, eax
+		mov ebx, 0FEE00000h
+		mov es:[ebx+0B0h], eax
 		
-		pop ax
+		pop es
+		pop ebx
+		pop eax
 		;UNLOAD_ALL_REGISTERS_IN_STACK
 	endm
 	
