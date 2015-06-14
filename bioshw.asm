@@ -542,6 +542,8 @@ WK2:
 		call makeInitProcPlace
 		call startNewProcessor
 		
+		call resignKbdInterrupt
+		
 		push 3Bh ; stack
 		push 0FFFFh
 		push 2Bh ; user mode code 
@@ -774,6 +776,75 @@ WK2:
 		call far ptr [ebx]
 	procInitProcedure endp
 	procInitProcedureSize = $ - procInitProcedure
+	
+	kbdintstr db 'Keyboard interrupt!'
+	kbdintstrsize = $ - kbdintstr
+	realModeKbdHndl proc near
+		push ebx
+		push ds
+		
+		mov bx, 7c0h
+		mov ds, bx
+		
+		push 0h
+		push 15h
+		push ds:kbdintstrsize
+		lea ebx, ds:kbdintstr
+		pushd ebx
+		call printRealModeVGA
+		
+		pop ds
+		pop ebx
+		
+		iret
+	realModeKbdHndl endp
+	
+	resignKbdInterrupt proc near
+		push eax
+		push ebx
+		push edx
+		push esi
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, 0C0h
+		mov es, ax
+		
+		; reinit real mode ptr to interrupt handler
+		mov ax, 21h
+		mov bx, 4h
+		mul bx
+		mov bx, ax
+		mov eax, 7c00000h
+		mov ax, offset realModeKbdHndl
+		mov es:[bx], eax
+		
+		; i/o apic reinit
+		mov ebx, ds:apicioregsel
+		mov eax, 21h
+		mov esi, START_ADDRESS_OI_TBL + 2 ; kbd interrupt
+
+		mov es:[ebx], esi
+		mov edx, es:[ebx+APIC_WIN_OFFSET]
+		mov es:[ebx+APIC_WIN_OFFSET], eax
+		
+		inc esi
+		mov es:[ebx], esi
+		mov edx, es:[ebx+APIC_WIN_OFFSET]
+		mov edx, 1000000h
+		mov es:[ebx+APIC_WIN_OFFSET], edx
+		
+		pop es
+		pop ds
+		pop esi
+		pop edx
+		pop ebx
+		pop eax
+			
+		ret
+	resignKbdInterrupt endp
 	
 	makeInitProcPlace proc near
 		push es
