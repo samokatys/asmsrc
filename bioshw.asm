@@ -714,9 +714,6 @@ WK2:
 				jnz check_ready_to_send_sipi
 				
 				cli 
-				in al,70h
-				or al,80h
-				out 70h,al
 				
 				mov eax, 0000000h
 				mov es:[ebx+310h], eax
@@ -727,9 +724,6 @@ WK2:
 				or eax, ecx
 				mov es:[ebx+300h], eax
 				
-				in al,70h
-				and al,07fh
-				out 70h,al
 				sti
 				
 				mov cx, 0FFFFh
@@ -760,6 +754,37 @@ WK2:
 		pushd ebx
 		call printRealModeVGA
 		
+		cli 
+		
+		lgdt gdtr
+		
+		; entering protected mode
+		mov eax, cr0
+		or eax, 1
+		mov cr0, eax
+		
+		db 0eah
+		dw offset EnterPMEntered
+		dw 01h*8
+		
+		EnterPMEntered:
+		
+		mov ax, 0C0h
+		mov gs, ax
+		
+		; leaving protected mode
+		mov eax, cr0
+		and eax, not 1
+		mov cr0, eax
+		
+		db 0eah
+		dw offset LeavePMLeaved
+		dw 7C0h
+		
+		LeavePMLeaved:
+		
+		sti
+		
 		jmp $
 	printNewProcString endp
 	
@@ -788,7 +813,7 @@ WK2:
 		
 		push 0h
 		push 15h
-		push ds:kbdintstrsize
+		push kbdintstrsize
 		lea ebx, ds:kbdintstr
 		pushd ebx
 		call printRealModeVGA
