@@ -544,6 +544,8 @@ WK2:
 		
 		call resignKbdInterrupt
 		
+		call sendInterIntToProc
+		
 		push 3Bh ; stack
 		push 0FFFFh
 		push 2Bh ; user mode code 
@@ -781,6 +783,9 @@ WK2:
 		dw offset LeavePMLeaved
 		dw 7C0h
 		
+		xor ax, ax
+		mov gs, ax
+		
 		LeavePMLeaved:
 		
 		sti
@@ -805,6 +810,7 @@ WK2:
 	kbdintstr db 'Keyboard interrupt!'
 	kbdintstrsize = $ - kbdintstr
 	realModeKbdHndl proc near
+		push eax
 		push ebx
 		push ds
 		
@@ -818,12 +824,46 @@ WK2:
 		pushd ebx
 		call printRealModeVGA
 		
+		mov ebx, 0FEE00000h
+		xor eax, eax
+		mov gs:[ebx+0B0h], eax
+		
 		pop ds
 		pop ebx
+		pop eax
 		
 		iret
 	realModeKbdHndl endp
 	
+	interintstr db 'Interprocessor interrupt!'
+	interintstrsize = $ - interintstr
+	interprocessorIntHndl proc near
+		push eax
+		push ebx
+		push ds
+		
+		mov bx, 7c0h
+		mov ds, bx
+		
+		push kbdintstrsize
+		push 15h
+		push interintstrsize
+		lea ebx, ds:interintstr
+		pushd ebx
+		call printRealModeVGA
+		
+		mov ebx, 0FEE00000h
+		xor eax, eax
+		mov gs:[ebx+0B0h], eax
+		
+		pop ds
+		pop ebx
+		pop eax
+		
+		iret
+	interprocessorIntHndl endp
+	
+	ipivector dw 38h
 	resignKbdInterrupt proc near
 		push eax
 		push ebx
@@ -846,18 +886,24 @@ WK2:
 		mov ax, offset realModeKbdHndl
 		mov es:[bx], eax
 		
+		mov ax, ds:ipivector
+		mov bx, 4h
+		mul bx
+		mov bx, ax
+		mov eax, 7c00000h
+		mov ax, offset interprocessorIntHndl
+		mov es:[bx], eax
+		
 		; i/o apic reinit
 		mov ebx, ds:apicioregsel
 		mov eax, 21h
 		mov esi, START_ADDRESS_OI_TBL + 2 ; kbd interrupt
 
 		mov es:[ebx], esi
-		mov edx, es:[ebx+APIC_WIN_OFFSET]
 		mov es:[ebx+APIC_WIN_OFFSET], eax
 		
 		inc esi
 		mov es:[ebx], esi
-		mov edx, es:[ebx+APIC_WIN_OFFSET]
 		mov edx, 1000000h
 		mov es:[ebx+APIC_WIN_OFFSET], edx
 		
@@ -894,6 +940,47 @@ WK2:
 		
 		ret
 	makeInitProcPlace endp
+	
+	sendInterIntToProc proc near
+		push eax
+		push ebx
+		push ecx
+		push ds
+		push es
+		
+		mov ax, 10h
+		mov ds, ax
+		mov ax, 0C0h
+		mov es, ax
+		
+		mov ebx, 0FEE00000h
+		
+		check_ready_to_send_int:
+			mov eax, es:[ebx+300h]
+			test eax, 1000h
+		jnz check_ready_to_send_int
+		
+		cli 
+		
+		mov eax, 1000000h
+		mov es:[ebx+310h], eax
+		
+		mov eax, 4000h ; assert - 1
+		xor ecx, ecx
+		mov cx, ds:ipivector
+		or eax, ecx
+		mov es:[ebx+300h], eax
+		
+		sti
+		
+		pop es
+		pop ds
+		pop ecx
+		pop ebx
+		pop eax
+		
+		ret
+	sendInterIntToProc endp
 	
 	
 	prepareGDTR proc
@@ -1944,12 +2031,10 @@ WK2:
 			jne end_init_timer
 				mov eax, 20h
 				mov es:[ebx], esi
-				mov edx, es:[ebx+APIC_WIN_OFFSET]
 				mov es:[ebx+APIC_WIN_OFFSET], eax
 				
 				inc esi
 				mov es:[ebx], esi
-				mov edx, es:[ebx+APIC_WIN_OFFSET]
 				xor edx, edx
 				mov es:[ebx+APIC_WIN_OFFSET], edx
 				
