@@ -546,6 +546,8 @@ WK2:
 		
 		call sendInterIntToProc
 		
+		call enumPCIDevices
+		
 		push 3Bh ; stack
 		push 0FFFFh
 		push 2Bh ; user mode code 
@@ -553,6 +555,141 @@ WK2:
 
 		retf
 	workInProtectedMode endp
+	
+	PCI_CONFIG_ADDRESS = 0CF8h
+	PCI_CONFIG_DATA = 0CFCh
+	
+	pciinformationstr db 'Device id = 0x'
+	pciinf1stmark = $ - pciinformationstr
+	db '0000 Vendor Id = 0x'
+	pciinf2ndmark = $ - pciinformationstr
+	db '0000'
+	pciinformationstrsize = $ - pciinformationstr
+	
+	pcidevicesnumberstr db 'PCI devices number = 0x'
+	pcidevicesnumbermark = $ - pcidevicesnumberstr
+	db '0000'
+	pcidevicesnumberstrsize = $ - pcidevicesnumberstr
+	
+	devicecount dw 0
+	
+	enumPCIDevices proc near
+		push eax
+		push ebx
+		push ecx
+		push edx
+		
+		xor ebx, ebx
+		mov ecx, 80000000h
+		enum_device_loop:
+			mov eax, ecx
+			mov dx, PCI_CONFIG_ADDRESS
+			out dx, eax
+			mov dx, PCI_CONFIG_DATA
+			in eax, dx
+			
+			mov dx, ax
+			cmp dx, 0FFFFh
+			je not_present_device
+				cmp bx, 7h
+				ja end_print_device_info
+					push bx
+					push eax
+					call printPCIDeviceInfo
+				end_print_device_info:
+				
+				inc bx
+				mov ds:devicecount, bx
+				
+				add ecx, 100h ; next function
+				jmp end_calc_new_address
+			not_present_device:
+				add ecx, 800h ; next device
+				and cx, 0F800h
+			end_calc_new_address:
+			test ecx, 1000000h
+		jz enum_device_loop
+		
+		xor eax, eax
+		mov ax, bx
+		
+		lea bx, ds:pcidevicesnumberstr
+		add bx, pcidevicesnumbermark
+		
+		push eax
+		push bx
+		push 4h
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]
+		
+		push 14h
+		push 12h
+		mov ax, pcidevicesnumberstrsize
+		push ax
+		lea ebx, pcidevicesnumberstr
+		push ebx
+		call printProtectedVGA
+		
+		pop edx
+		pop ecx
+		pop ebx
+		pop eax
+	
+		ret
+	enumPCIDevices endp
+	
+	; word - number
+	; double word - info
+	printPCIDeviceInfo proc near
+		push bp
+		mov bp, sp
+		push eax
+		push ebx
+		push ds
+		
+		mov ax, 10h
+		mov ds, ax
+		
+		lea bx, ds:pciinformationstr
+		add bx, pciinf1stmark
+		
+		mov eax, [bp+4]
+		shr eax, 16
+		
+		push eax
+		push bx
+		push 4h
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]
+	
+		lea bx, ds:pciinformationstr
+		add bx, pciinf2ndmark
+		
+		mov eax, [bp+4]
+		and eax, 0FFFFh
+		
+		push eax
+		push bx
+		push 4h
+		lea ebx, ds:itoahcallptr
+		call far ptr [ebx]
+		
+		mov ax, [bp+8]
+		push 0h
+		push ax
+		mov ax, pciinformationstrsize
+		push ax
+		lea ebx, pciinformationstr
+		push ebx
+		call printProtectedVGA
+		
+		pop ds
+		pop ebx
+		pop eax
+		pop bp
+			
+		ret 6
+	printPCIDeviceInfo endp
 	
 	floatingptrsignature dd 5F504D5Fh
 	mptablesignature dd 504D4350h
